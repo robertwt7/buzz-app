@@ -38,6 +38,7 @@ import type { Navigation } from "../navigation/controller";
 import type { ChannelSummary } from "../relay/contracts";
 import type { RelaySession } from "../relay/session";
 import { conversationTarget } from "./routes";
+import { soloSuccessor } from "./solo-successor";
 import type { SoloRegion } from "./solo-navigation-model";
 import type {
   SoloCardProps,
@@ -121,12 +122,34 @@ export function RegionConversation(props: SoloConversationProps) {
         onLifecycle={
           handoff
             ? (action) => {
-                if (active())
-                  handoff.openLifecycle(
-                    channel,
-                    action,
-                    focusTarget() || undefined,
-                  );
+                if (!active()) return;
+                const visit = navigator.snapshot();
+                const leavesOpenChat =
+                  action !== "unarchive" &&
+                  visit.entry.target.kind === "conversation" &&
+                  visit.entry.target.channelId === channel.id;
+                const neighbors =
+                  handoff.soloNeighbors.current?.(channel.id) ?? [];
+                const trigger = focusTarget() || undefined;
+                handoff.openLifecycle(channel, action, trigger, undefined, {
+                  close() {
+                    if (trigger?.isConnected)
+                      trigger.focus({ preventScroll: true });
+                  },
+                  completed() {
+                    // The row can unmount before completion. Keep the captured
+                    // Solo visit, unless the user has already navigated away.
+                    if (leavesOpenChat && !visit.attempt.signal.aborted)
+                      void navigator.open(
+                        soloSuccessor(
+                          scope,
+                          session.channels.list().channels,
+                          neighbors,
+                          channel.id,
+                        ),
+                      );
+                  },
+                });
               }
             : undefined
         }

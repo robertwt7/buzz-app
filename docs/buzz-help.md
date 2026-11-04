@@ -380,6 +380,8 @@ revokes all of them, and a pairing unused for 30 days expires.
   community and account only. It covers chats started with **New chat**; a
   chat's own settings can still choose another lifetime, and existing chats do
   not change.
+  Deleting or archiving the open chat keeps you in Solo and opens another chat
+  or a new draft.
 - **Team** contains community channels and their threads. Use the **@** picker
   to address a channel member. A full name typed after **@** and followed by
   Space or closing punctuation, such as `,`, `.` or `'`, selects that person or

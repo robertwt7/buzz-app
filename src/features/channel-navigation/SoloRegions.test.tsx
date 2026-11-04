@@ -13,6 +13,8 @@ import { afterEach, assert, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useCallback, useRef, useState } from "react";
 import { SoloRegions } from "./SoloRegions";
+import { ChannelNavigationProvider } from "./ChannelNavigationState";
+import { conversationTarget, soloDraftTarget } from "./routes";
 import { MessageComposer } from "../messages/MessageComposer";
 import { composerDOMFixture } from "../messages/composer-testing";
 import { ToastProvider } from "../../shared/design-system/ui/Toast";
@@ -48,6 +50,7 @@ function fixture() {
 function mount(
   h: ReturnType<typeof fixture>,
   target: OpenTarget = { version: 1, kind: "home" },
+  wrap: (children: ReactNode) => ReactNode = (children) => children,
 ) {
   const open = vi.fn(async () => ({ status: "opened" as const }));
   const retryReveal = vi.fn();
@@ -85,11 +88,7 @@ function mount(
       />
     );
   }
-  const mounted = render(
-    <ToastProvider>
-      <View />
-    </ToastProvider>,
-  );
+  const mounted = render(<ToastProvider>{wrap(<View />)}</ToastProvider>);
   return {
     ...mounted,
     open,
@@ -98,11 +97,7 @@ function mount(
     navigate(next: OpenTarget) {
       target = next;
       void h.navigate(next);
-      mounted.rerender(
-        <ToastProvider>
-          <View />
-        </ToastProvider>,
-      );
+      mounted.rerender(<ToastProvider>{wrap(<View />)}</ToastProvider>);
     },
   };
 }
@@ -185,6 +180,124 @@ function Body({ ui }: SoloRegionProps) {
     </>
   );
 }
+
+it.each([
+  ["delete", "selected"],
+  ["archive", "selected"],
+  ["delete", "other chat"],
+  ["delete", "navigated away"],
+  ["delete", "failed"],
+] as const)(
+  "%s of a plugin-owned chat preserves Solo and newer navigation (%s)",
+  async (action, outcome) => {
+    const h = fixture();
+    // Menus offer lifecycle actions from a real chat's signed roster.
+    const owned = "0b6c5f3e-7d2a-4e1b-9c8d-1f2e3a4b5c6d";
+    h.roster(
+      h.session.channels.list().channels.map((channel) =>
+        channel.id === "owned"
+          ? {
+              ...channel,
+              id: owned,
+              members: [h.session.viewer],
+              owners: [h.session.viewer],
+              viewerRole: "owner",
+            }
+          : channel,
+      ),
+    );
+    await h.register({
+      component: ({ ui }) => (
+        <>
+          <Row ui={ui} channelId={owned} />
+          <Row ui={ui} channelId="chat" label="Must stay outside" />
+        </>
+      ),
+    });
+    const target = conversationTarget(
+      h.scope,
+      outcome === "other chat" ? "chat" : owned,
+    );
+    await h.navigate(target);
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    const pending = new Promise<void>((resolve, reject) => {
+      finish = resolve;
+      fail = reject;
+    });
+    const run = vi.fn(() => pending);
+    h.session.channelLifecycle = {
+      ...h.session.channelLifecycle,
+      available: true,
+      load: async (channelId) => ({
+        channelId,
+        channelType: "stream",
+        canDelete: true,
+        canArchive: true,
+        canUnarchive: false,
+        canLeave: false,
+        canHide: false,
+      }),
+      run,
+    };
+    const view = mount(h, target, (children) => (
+      <ChannelNavigationProvider relay={h.relay}>
+        {children}
+      </ChannelNavigationProvider>
+    ));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Actions for Owned" }));
+    const actionName = action === "delete" ? "Delete chat" : "Archive chat";
+    await user.click(await screen.findByRole("menuitem", { name: actionName }));
+    if (action === "delete") {
+      const dialog = await screen.findByRole("dialog", {
+        name: "Delete Owned?",
+      });
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(view.open).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+      await user.click(
+        screen.getByRole("button", { name: "Actions for Owned" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: actionName }),
+      );
+      await user.click(await screen.findByRole("button", { name: actionName }));
+    }
+    try {
+      await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      if (outcome === "navigated away")
+        act(() => view.navigate(conversationTarget(h.scope, "chat")));
+      if (outcome === "failed")
+        await act(async () => fail(new Error("Deletion unavailable")));
+      else {
+        // Roster removal unmounts the row before the session-owned write completes.
+        act(() =>
+          h.roster(
+            h.session.channels.list().channels.filter((c) => c.id !== owned),
+          ),
+        );
+        expect(
+          screen.queryByRole("button", { name: "Owned" }),
+        ).not.toBeInTheDocument();
+        await act(async () => finish());
+      }
+      await screen.findByRole("dialog", {
+        name:
+          outcome === "failed"
+            ? "Delete chat failed"
+            : `${action === "delete" ? "Chat deleted" : "Chat archived"}: Owned`,
+      });
+      if (outcome === "selected")
+        expect(view.open).toHaveBeenCalledExactlyOnceWith(
+          soloDraftTarget(h.scope),
+        );
+      else expect(view.open).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => finish());
+    }
+  },
+);
 
 it("paints the shared card tone and accepted drag target the source chooses", async () => {
   const h = fixture();
