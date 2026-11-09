@@ -56,6 +56,9 @@ the first message, so the Outbox retries both after a restart. A source's
 source is not running and ready. Before the create, the host saves on this
 device how the chat started; `started` returns it to that region's source until
 `forget`. Sources reconcile their own records from it by channel ID.
+With `lead`, a workspace draft's start also records that the chat leads that
+workspace, but only while the draft still targets it; the source saves it with
+`setWorkspaceLead`.
 
 Host reveal listeners receive live intent only. A pending request is kept only
 for a late source subscriber and ends when navigation leaves or the connection

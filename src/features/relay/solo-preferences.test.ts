@@ -3,18 +3,23 @@ import { TEAM_MANIFEST_TAG } from "../channel-templates/team-payload";
 import { afterEach, expect, it, vi } from "vitest";
 import { createRelaySession } from "./session";
 import {
-  coordinate,
   KIT_TAG,
+  coordinate,
+  LEADS_TAG,
+  leadsCoordinate,
   ME_KIT_TAG,
-  kitTag,
   kitRecordFits,
   parseKitRecord,
+  privateCoordinate,
+  privateTag,
   type Groups,
   type KitRecord,
   type KitValue,
   type Template,
+  type PrivateRecord,
 } from "../channel-templates/model";
 import { projectTemplateId, templateEntry } from "../solo/workspace";
+import leadCases from "../channel-templates/workspace-leads-admission-contract.json";
 import { matchesEvent } from "./projection";
 import { flush, keypair, roster, scriptedTransport, signed } from "./testing";
 import type { ReadFilter, RelayEvent } from "./events";
@@ -44,25 +49,49 @@ function fixture() {
     starred: [],
     muted: [],
   };
-  const install = (value: KitValue, deleted = false) => {
-    const record: KitRecord = { version: 1, community, deleted, value };
+  const installRecord = (record: PrivateRecord, createdAt = time++) =>
     events.push(
       signed(viewer, {
         kind: 30078,
-        created_at: time++,
+        created_at: createdAt,
         tags: [
-          ["d", coordinate(record)],
-          ["t", kitTag(record)],
+          ["d", privateCoordinate(record)],
+          ["t", privateTag(record)],
         ],
         content: JSON.stringify(record),
       }),
     );
+  const install = (value: KitValue, deleted = false, createdAt?: number) => {
+    const record: KitRecord = { version: 1, community, deleted, value };
+    installRecord(record, createdAt);
   };
-  const query = vi.fn(async (filters: readonly ReadFilter[]) =>
-    events.filter((event) =>
+  const leadReads: {
+    fail: false | Error;
+    /** Holds the next Leads read after it has selected its rows. */
+    hold?: Promise<void> | undefined;
+    /** Runs once as the next Leads read starts: another device's writes. */
+    before?: (() => void) | undefined;
+  } = { fail: false };
+  const query = vi.fn(async (filters: readonly ReadFilter[]) => {
+    const leads = filters.some((filter) =>
+      filter["#d"]?.includes(leadsCoordinate(community)),
+    );
+    if (leads && leadReads.fail) throw leadReads.fail;
+    const before = leads ? leadReads.before : undefined;
+    if (before) {
+      leadReads.before = undefined;
+      before();
+    }
+    const rows = events.filter((event) =>
       filters.some((filter) => matchesEvent(event, filter)),
-    ),
-  );
+    );
+    const hold = leads ? leadReads.hold : undefined;
+    if (hold) {
+      leadReads.hold = undefined;
+      await hold;
+    }
+    return rows;
+  });
   const assignment = vi.fn(async (intent) => {
     const assignments = { ...legacy.assignments };
     if (intent.sectionId) assignments[intent.channelId] = intent.sectionId;
@@ -129,6 +158,8 @@ function fixture() {
     publish,
     prepare,
     install,
+    installRecord,
+    leadReads,
     events,
     preferences: owner.session.sidebarPreferences,
   };
@@ -703,6 +734,347 @@ it("writes no tombstone when the groups write fails", async () => {
     expect(
       f.session.soloPreferences.snapshot().data?.sections.map(({ id }) => id),
     ).toEqual(["work", "keep"]);
+  } finally {
+    f.dispose();
+  }
+});
+
+const lead = { region: "buzz.region:nexus:tasks", channelId: channel };
+const leadsRecord = (
+  leads: Record<string, Record<string, unknown>>,
+  extra: Record<string, unknown> = {},
+) =>
+  ({
+    version: 1,
+    community,
+    deleted: false,
+    value: { type: "workspace-leads", id: "me", leads, ...extra },
+  }) as PrivateRecord;
+const tagged = (f: ReturnType<typeof fixture>, tag: string) =>
+  f.publish.mock.calls
+    .map(([event]) => event)
+    .filter((event) => event.tags.some((t) => t[0] === "t" && t[1] === tag))
+    .map((event) => JSON.parse(event.content));
+
+it("keeps Leads in their own record, fencing conflicting replacements and leaving Groups at main's fields", async () => {
+  const f = fixture();
+  const preferences = f.session.soloPreferences;
+  try {
+    f.install(groups);
+    await preferences.refresh();
+    await preferences.setWorkspaceLead(
+      { workspaceId: "work", lead },
+      new AbortController().signal,
+    );
+    expect(preferences.leads.snapshot()).toEqual({
+      status: "ready",
+      leads: { work: lead },
+    });
+    const [saved] = tagged(f, LEADS_TAG);
+    expect(saved).toEqual(leadsRecord({ work: lead }));
+    expect(
+      f.publish.mock.calls[0]?.[0].tags.find((t) => t[0] === "d")?.[1],
+    ).toBe(leadsCoordinate(community));
+    // The catalog never fetches the Leads record; older clients cannot either.
+    await f.session.channelKit.refresh();
+    expect(
+      f.query.mock.calls.some(([filters]) =>
+        filters.some((filter) => filter["#t"]?.includes(LEADS_TAG)),
+      ),
+    ).toBe(false);
+    const writes = f.publish.mock.calls.length;
+    await preferences.setWorkspaceLead(
+      { workspaceId: "work", lead },
+      new AbortController().signal,
+    );
+    expect(f.publish).toHaveBeenCalledTimes(writes);
+    for (const expected of [undefined, "stale"])
+      await expect(
+        preferences.setWorkspaceLead(
+          {
+            workspaceId: "work",
+            lead: { ...lead, channelId: other },
+            ...(expected ? { expected } : {}),
+          },
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow("already has a lead");
+    expect(f.publish).toHaveBeenCalledTimes(writes);
+    expect(
+      await preferences.setWorkspaceLead(
+        { workspaceId: "missing", lead },
+        new AbortController().signal,
+      ),
+    ).toBe(false);
+    await preferences.setWorkspaceLead(
+      {
+        workspaceId: "work",
+        lead: { ...lead, channelId: other },
+        expected: channel,
+      },
+      new AbortController().signal,
+    );
+    expect(preferences.leads.snapshot().leads.work?.channelId).toBe(other);
+    await preferences.assign(other, undefined);
+    await preferences.createSection({ id: "next", name: "Next" });
+    // Every Groups record this change emits keeps main's strict workspace
+    // fields; the shared corpus runs the same shape through native admission.
+    const emitted = tagged(f, ME_KIT_TAG);
+    expect(emitted.length).toBeGreaterThan(1);
+    for (const record of emitted)
+      for (const group of record.value.groups)
+        expect(Object.keys(group).sort()).toEqual([
+          "defaultTemplateId",
+          "id",
+          "name",
+        ]);
+    const oracle = leadCases.find((item) =>
+      item.name.startsWith("groups emitted beside leads"),
+    );
+    expect(oracle?.accepted).toBe(true);
+    expect(Object.keys(oracle?.record.value.groups?.[0] ?? {}).sort()).toEqual([
+      "defaultTemplateId",
+      "id",
+      "name",
+    ]);
+  } finally {
+    f.dispose();
+  }
+});
+
+it("keeps unknown Leads fields, hides and prunes orphans, and best-effort removes a deleted workspace's Lead", async () => {
+  const f = fixture();
+  const preferences = f.session.soloPreferences;
+  try {
+    f.install({
+      ...groups,
+      groups: [
+        ...groups.groups,
+        { id: "next", name: "Next", defaultTemplateId: "" },
+      ],
+    });
+    f.installRecord(
+      leadsRecord(
+        {
+          work: { ...lead, pinnedAt: 1 },
+          gone: lead,
+        },
+        { future: { kept: true } },
+      ),
+    );
+    await preferences.refresh();
+    await f.session.soloPreferences.leads.refresh();
+    await preferences.setWorkspaceLead(
+      { workspaceId: "next", lead: { ...lead, channelId: other } },
+      new AbortController().signal,
+    );
+    expect(tagged(f, LEADS_TAG).at(-1)).toEqual(
+      leadsRecord(
+        {
+          work: { ...lead, pinnedAt: 1 },
+          next: { ...lead, channelId: other },
+        },
+        { future: { kept: true } },
+      ),
+    );
+    // A replacement keeps the fields of the entry it replaces.
+    await preferences.setWorkspaceLead(
+      {
+        workspaceId: "work",
+        lead: { ...lead, channelId: other },
+        expected: channel,
+      },
+      new AbortController().signal,
+    );
+    expect(tagged(f, LEADS_TAG).at(-1)?.value.leads.work).toEqual({
+      ...lead,
+      channelId: other,
+      pinnedAt: 1,
+    });
+    await preferences.removeSection("work");
+    await vi.waitFor(() =>
+      expect(tagged(f, LEADS_TAG).at(-1)?.value.leads).toEqual({
+        next: { ...lead, channelId: other },
+      }),
+    );
+    expect(tagged(f, LEADS_TAG).at(-1)?.value.future).toEqual({ kept: true });
+    // A failed cleanup read keeps the Lead and never fails the deletion.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const writes = f.publish.mock.calls.length;
+    f.leadReads.fail = new Error("Leads read failed");
+    await preferences.removeSection("next");
+    expect(preferences.snapshot().data?.sections.map(({ id }) => id)).toEqual(
+      [],
+    );
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(f.publish).toHaveBeenCalledTimes(writes + 1);
+    expect(tagged(f, LEADS_TAG).at(-1)?.value.leads).toHaveProperty("next");
+  } finally {
+    f.dispose();
+  }
+});
+
+it("isolates an unreadable Leads record from workspaces and the catalog, and never writes over it", async () => {
+  const f = fixture();
+  const preferences = f.session.soloPreferences;
+  try {
+    f.install(groups);
+    f.installRecord(leadsRecord({ work: { ...lead, channelId: "invalid" } }));
+    await preferences.refresh();
+    await preferences.leads.refresh();
+    expect(preferences.leads.snapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Invalid workspace lead"),
+    });
+    expect(f.session.channelKit.snapshot().status).toBe("ready");
+    expect(preferences.snapshot().status).toBe("ready");
+    await expect(
+      preferences.setWorkspaceLead(
+        { workspaceId: "work", lead },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Invalid workspace lead");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await preferences.createSection({ id: "next", name: "Next" });
+    await preferences.removeSection("work");
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(tagged(f, LEADS_TAG)).toEqual([]);
+    // A readable record recovers on the next read.
+    f.installRecord(leadsRecord({ next: lead }));
+    await preferences.leads.refresh();
+    expect(preferences.leads.snapshot()).toEqual({
+      status: "ready",
+      leads: { next: lead },
+    });
+  } finally {
+    f.dispose();
+  }
+});
+
+it("loads Leads beside Groups, and session recovery retries a transient failure", async () => {
+  const f = fixture();
+  const preferences = f.session.soloPreferences;
+  try {
+    f.install(groups);
+    f.installRecord(leadsRecord({ work: lead }));
+    f.leadReads.fail = new TypeError("Failed to fetch");
+    // Nothing asks for Leads: the ready catalog starts their read.
+    await preferences.refresh();
+    await vi.waitFor(() =>
+      expect(preferences.leads.snapshot()).toMatchObject({
+        status: "error",
+        transient: true,
+      }),
+    );
+    expect(preferences.snapshot().status).toBe("ready");
+    expect(f.session.recovery?.snapshot().recovering).toBe(true);
+    f.leadReads.fail = false;
+    f.session.recovery?.retryNow();
+    await vi.waitFor(() =>
+      expect(preferences.leads.snapshot()).toEqual({
+        status: "ready",
+        leads: { work: lead },
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(f.session.recovery?.snapshot().recovering).toBe(false),
+    );
+    // A cleared session reads them again with the next catalog.
+    await f.clearCache();
+    expect(preferences.leads.snapshot().status).not.toBe("ready");
+    await preferences.refresh();
+    await vi.waitFor(() =>
+      expect(preferences.leads.snapshot()).toEqual({
+        status: "ready",
+        leads: { work: lead },
+      }),
+    );
+  } finally {
+    f.dispose();
+  }
+});
+
+it("prunes Leads against Groups read after them, so another device's Lead survives", async () => {
+  const f = fixture();
+  const preferences = f.session.soloPreferences;
+  const next = { ...lead, channelId: other };
+  // Another device adds a workspace and saves its Lead; the record contract
+  // lets that writer keep orphans, here the Lead of the deleted workspace.
+  const theirs = (work: boolean) => () => {
+    // Newer than this device's own writes.
+    const at = Math.floor(Date.now() / 1000);
+    f.install(
+      {
+        type: "groups",
+        id: "me",
+        groups: [
+          ...(work ? groups.groups : []),
+          { id: "theirs", name: "Theirs", defaultTemplateId: "" },
+        ],
+        assignments: {},
+      },
+      false,
+      at,
+    );
+    f.installRecord(leadsRecord({ work: lead, theirs: lead }), at);
+  };
+  try {
+    f.install(groups);
+    f.installRecord(leadsRecord({ work: lead }));
+    await preferences.refresh();
+    await preferences.leads.refresh();
+    // Between the deletion's Groups save and its cleanup.
+    f.leadReads.before = theirs(false);
+    await preferences.removeSection("work");
+    await vi.waitFor(() => expect(tagged(f, LEADS_TAG)).toHaveLength(1));
+    expect(tagged(f, LEADS_TAG)[0]?.value.leads).toEqual({ theirs: lead });
+
+    // Between the setter's reads.
+    f.install(groups);
+    f.installRecord(leadsRecord({ work: lead }));
+    f.leadReads.before = theirs(true);
+    await preferences.setWorkspaceLead(
+      { workspaceId: "work", lead: next, expected: channel },
+      new AbortController().signal,
+    );
+    expect(tagged(f, LEADS_TAG).at(-1)?.value.leads).toEqual({
+      work: next,
+      theirs: lead,
+    });
+  } finally {
+    f.dispose();
+  }
+});
+
+it("never lets a refresh begun before a confirmed Lead write show the older Leads", async () => {
+  const f = fixture();
+  const preferences = f.session.soloPreferences;
+  try {
+    f.install(groups);
+    await preferences.refresh();
+    await vi.waitFor(() =>
+      expect(preferences.leads.snapshot().status).toBe("ready"),
+    );
+    let release = () => {};
+    f.leadReads.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stale = preferences.leads.refresh();
+    try {
+      await vi.waitFor(() => expect(f.leadReads.hold).toBeUndefined());
+      await preferences.setWorkspaceLead(
+        { workspaceId: "work", lead },
+        new AbortController().signal,
+      );
+      expect(preferences.leads.snapshot().leads).toEqual({ work: lead });
+    } finally {
+      release();
+    }
+    await stale;
+    expect(preferences.leads.snapshot()).toEqual({
+      status: "ready",
+      leads: { work: lead },
+    });
   } finally {
     f.dispose();
   }

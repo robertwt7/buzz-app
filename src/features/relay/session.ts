@@ -2388,6 +2388,11 @@ export function createRelaySession(
           () => void soloPreferences.queries.refresh(),
         ),
         recoverable(
+          soloPreferences.queries.leads.subscribe,
+          () => loadState(soloPreferences.queries.leads.snapshot()),
+          () => void soloPreferences.queries.leads.refresh(),
+        ),
+        recoverable(
           sidebarPreferences.queries.subscribe,
           () => loadState(sidebarPreferences.queries.snapshot()),
           () => void sidebarPreferences.queries.refresh(),

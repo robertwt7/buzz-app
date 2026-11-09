@@ -1,0 +1,456 @@
+[
+  {
+    "name": "empty leads",
+    "accepted": true,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {}
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "one lead",
+    "accepted": true,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "buzz.region:nexus:tasks",
+            "channelId": "11111111-1111-4111-8111-111111111111"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "unknown record and entry fields are kept",
+    "accepted": true,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "buzz.region:nexus:tasks",
+            "channelId": "11111111-1111-4111-8111-111111111111",
+            "pinnedAt": 1700000000,
+            "note": {
+              "by": "later"
+            }
+          }
+        },
+        "order": ["work"],
+        "future": {
+          "x": [1]
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "tombstone",
+    "accepted": true,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": true,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {}
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "lead without channel",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "buzz.region:nexus:tasks"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "lead outside a region",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "other",
+            "channelId": "11111111-1111-4111-8111-111111111111"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "lead with an empty region name",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "buzz.region:",
+            "channelId": "11111111-1111-4111-8111-111111111111"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "lead with an invalid region name",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "buzz.region:nexus tasks",
+            "channelId": "11111111-1111-4111-8111-111111111111"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "lead with an invalid channel",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": {
+            "region": "buzz.region:nexus:tasks",
+            "channelId": "invalid"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "lead that is not an object",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "work": "11111111-1111-4111-8111-111111111111"
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "invalid workspace id",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {
+          "bad id": {
+            "region": "buzz.region:nexus:tasks",
+            "channelId": "11111111-1111-4111-8111-111111111111"
+          }
+        }
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "leads that are not a map",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": [
+          {
+            "region": "buzz.region:nexus:tasks",
+            "channelId": "11111111-1111-4111-8111-111111111111"
+          }
+        ]
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "missing leads",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me"
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "another record id",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "other",
+        "leads": {}
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "version 2",
+    "accepted": false,
+    "record": {
+      "version": 2,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {}
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "unknown envelope field",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {}
+      },
+      "extra": true
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "catalog tag",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {}
+      }
+    },
+    "tags": [
+      [
+        "d",
+        "buzz-workspace-leads-v1:https%3A%2F%2Frelay.test:workspace-leads:me"
+      ],
+      ["t", "buzz-me-kit-v1"]
+    ]
+  },
+  {
+    "name": "groups coordinate",
+    "accepted": false,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "workspace-leads",
+        "id": "me",
+        "leads": {}
+      }
+    },
+    "tags": [
+      ["d", "buzz-me-kit-v1:https%3A%2F%2Frelay.test:groups:me"],
+      ["t", "buzz-workspace-leads-v1"]
+    ]
+  },
+  {
+    "name": "groups emitted beside leads keep main's workspace fields",
+    "accepted": true,
+    "record": {
+      "version": 1,
+      "community": "https://relay.test",
+      "deleted": false,
+      "value": {
+        "type": "groups",
+        "id": "me",
+        "groups": [
+          {
+            "id": "work",
+            "name": "Work",
+            "defaultTemplateId": ""
+          }
+        ],
+        "assignments": {}
+      }
+    },
+    "tags": [
+      ["d", "buzz-me-kit-v1:https%3A%2F%2Frelay.test:groups:me"],
+      ["t", "buzz-me-kit-v1"]
+    ]
+  }
+]

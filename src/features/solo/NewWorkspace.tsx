@@ -33,7 +33,7 @@ export function NewWorkspace({
   session: RelaySession;
   create(project: { id: string; name: string }): Promise<unknown>;
   close(): void;
-  onCreated(id: string): void;
+  onCreated(id: string): void | Promise<void>;
 }) {
   const [id] = useState(() => crypto.randomUUID());
   const [name, setName] = useState("");
@@ -100,7 +100,7 @@ export function NewWorkspace({
             defaults.current,
           );
       }
-      onCreated(id);
+      await onCreated(id);
       close();
     } catch (reason) {
       setError(

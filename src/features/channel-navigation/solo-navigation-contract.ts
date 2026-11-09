@@ -36,12 +36,19 @@ export type SoloRegionSource = Readonly<{
   subscribe(listener: () => void): () => void;
   read(binding: SoloRegionBinding): SoloRegionSnapshot;
   component: ComponentType<SoloRegionProps>;
+  /** Compose tasks with ordinary chats in the host's existing workspace inventory. */
+  composeWorkspaces?: true;
+  /** Select a newly created host workspace using this source’s Lead/draft policy. */
+  openWorkspace?(
+    binding: SoloRegionBinding,
+    workspaceId: string,
+  ): Promise<void>;
   actions?: (binding: SoloRegionBinding) => readonly SoloRegionAction[];
   /** Agents a draft from `openDraft` may address. Without it, any available agent. */
   draftAgent?(binding: SoloRegionBinding, pubkey: string): boolean;
 }>;
 /** How a chat this device sent from `openDraft` was started. */
-export type SoloDraftStart = Readonly<{ workspace?: string }>;
+export type SoloDraftStart = Readonly<{ workspace?: string; lead?: true }>;
 export type SoloChatInput = Readonly<{
   channelId: string;
   title: string;
@@ -51,11 +58,23 @@ export type SoloChatInput = Readonly<{
 }>;
 export type SoloRegionHandle = Readonly<{
   label: string;
+  /** Freshly resolve this source’s optional lead. Unreadable leads return no channel; archived leads retain their link. */
+  workspaceLead(
+    binding: SoloRegionBinding,
+    workspaceId: string,
+  ): Promise<string | undefined>;
+  /** Save the optional lead with the existing workspace revision checks and readback. Concurrent devices retain the workspace writer’s conflict policy. */
+  setWorkspaceLead(
+    binding: SoloRegionBinding,
+    workspaceId: string,
+    channelId: string,
+  ): Promise<string | undefined>;
   /** Open New chat for this region. Its first send creates the chat with this
-   * region's label; until then it is only a draft. */
+   * region's label; until then it is only a draft. With `lead`, the chat starts
+   * as the workspace's lead while the draft still targets that workspace. */
   openDraft(
     binding: SoloRegionBinding,
-    input?: Readonly<{ workspace?: string }>,
+    input?: Readonly<{ workspace?: string; lead?: true }>,
   ): void;
   /** This device's record of a chat started from `openDraft`, kept until `forget`. */
   started(
@@ -82,7 +101,21 @@ export type SoloRegionProps = Readonly<{
     Conversation: ComponentType<SoloConversationProps>;
     Card: ComponentType<SoloCardProps>;
     Disclosure: ComponentType<SoloDisclosureProps>;
+    Workspace?: ComponentType<SoloWorkspaceProps>;
+    Chats?: ComponentType<Readonly<{ all?: boolean }>>;
   }>;
+}>;
+export type SoloWorkspaceProps = Readonly<{
+  id: string;
+  /** The workspace whose lead draft, from `openDraft` with `lead`, selects this row. */
+  leadWorkspaceId?: string;
+  selected?: boolean;
+  onSelect?(): void;
+  onNewTask?(): void;
+  /** Reveal a moved or externally opened child; selecting the lead does not expand. */
+  reveal?: string;
+  dropTarget?: boolean;
+  children?: ReactNode;
 }>;
 /** Host conversation behavior. The source composes the presentation from its parts. */
 export type SoloConversationProps = Readonly<{
@@ -142,7 +175,11 @@ export type SoloNavigation = Readonly<{
 
 export type SoloWorkspaceSnapshot = Readonly<{
   status: "loading" | "ready" | "unavailable";
-  workspaces: readonly Readonly<{ id: string; name: string }>[];
+  workspaces: readonly Readonly<{
+    id: string;
+    name: string;
+    lead?: Readonly<{ region: string; channelId: string }>;
+  }>[];
   canCreate: boolean;
   error?: string;
 }>;

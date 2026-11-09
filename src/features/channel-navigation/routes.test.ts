@@ -75,3 +75,15 @@ it("keeps a region draft's label and refuses a malformed or linked one", () => {
   ])
     expect(soloDraft(params)).toBeUndefined();
 });
+it("keeps a region lead draft only with its region and workspace", () => {
+  const region = "buzz.region:example:tasks";
+  expect(
+    soloDraft({ kind: "solo-draft", region, project: "p", lead: true }),
+  ).toEqual({ region, project: "p", lead: true });
+  for (const params of [
+    { kind: "solo-draft", region, lead: true },
+    { kind: "solo-draft", project: "p", lead: true },
+    { kind: "solo-draft", region, project: "p", lead: false },
+  ])
+    expect(soloDraft(params)).toBeUndefined();
+});

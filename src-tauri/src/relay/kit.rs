@@ -3,6 +3,8 @@ use serde_json::Value;
 
 const KIT_TAG: &str = "buzz-channel-kit-v1";
 const ME_KIT_TAG: &str = "buzz-me-kit-v1";
+/// Workspace Leads, apart from `groups:me` so older clients never fetch them.
+const LEADS_TAG: &str = "buzz-workspace-leads-v1";
 const MANIFEST_TAG: &str = "buzz-channel-kit-v2";
 const PAYLOAD_TAG: &str = "buzz-team-payload-v1";
 const TEXT_TAG: &str = "buzz-team-text-v1";
@@ -111,6 +113,25 @@ fn only(value: &Value, allowed: &[&str]) -> bool {
 }
 fn exact_lineup(value: &Value, allowed: &[&str]) -> bool {
     only(value, allowed) && lineup(value)
+}
+/// Known Lead fields; later clients may add others, which are kept.
+fn workspace_lead(value: &Value) -> bool {
+    value.is_object()
+        && value["channelId"]
+            .as_str()
+            .is_some_and(super::channel_writes::uuid)
+        && value["region"].as_str().is_some_and(|region| {
+            region.strip_prefix("buzz.region:").is_some_and(|name| {
+                name.len() <= 201
+                    && name
+                        .as_bytes()
+                        .first()
+                        .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                    && name.bytes().all(|b| {
+                        b.is_ascii_lowercase() || b.is_ascii_digit() || b".:-".contains(&b)
+                    })
+            })
+        })
 }
 fn record(raw: &Value, community: &str) -> Result<String> {
     let bytes = serde_json::to_vec(raw).map_err(|_| "Invalid channel recipe")?;
@@ -228,6 +249,19 @@ fn record(raw: &Value, community: &str) -> Result<String> {
                             })
                     })
         }
+        "workspace-leads" => {
+            id == "me"
+                && version == 1
+                && value
+                    .get("leads")
+                    .and_then(Value::as_object)
+                    .is_some_and(|leads| {
+                        leads.len() <= 100
+                            && leads.iter().all(|(workspace, lead)| {
+                                identifier(workspace) && workspace_lead(lead)
+                            })
+                    })
+        }
         _ => false,
     };
     if !valid {
@@ -270,6 +304,8 @@ fn record_tag(raw: &Value) -> &'static str {
         TEXT_TAG
     } else if raw["version"] == 2 {
         MANIFEST_TAG
+    } else if value["type"] == "workspace-leads" {
+        LEADS_TAG
     } else if (value["type"] == "groups" && value["id"] == "me")
         || (value["type"] == "template"
             && value["id"]
@@ -372,6 +408,15 @@ mod tests {
             "channels":["11111111-1111-4111-8111-111111111111"]
         }});
         assert!(record(&raw, community).unwrap().starts_with(ME_KIT_TAG));
+        // Main's strict workspace fields: a Lead lives in its own record.
+        raw["value"]["groups"] = serde_json::json!([{"id":"work","name":"Work","defaultTemplateId":"",
+            "lead":{"region":"buzz.region:nexus:tasks","channelId":"11111111-1111-4111-8111-111111111111"}}]);
+        assert!(record(&raw, community).is_err());
+        raw["value"]["groups"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("lead");
+        assert!(record(&raw, community).is_ok());
         raw["value"]["id"] = serde_json::json!("personal");
         assert!(record(&raw, community).is_err());
         raw["value"]["id"] = serde_json::json!("me");
@@ -400,6 +445,64 @@ mod tests {
 #[cfg(test)]
 mod crypto_tests {
     use super::*;
+    #[tokio::test]
+    async fn workspace_leads_round_trip_with_unknown_fields_at_their_own_address() {
+        let host = IdentityHost::fixture();
+        let community = "https://relay.test";
+        let raw = serde_json::json!({"version":1,"community":community,"deleted":false,
+        "value":{"type":"workspace-leads","id":"me","future":[1],"leads":{
+            "work":{"region":"buzz.region:nexus:tasks",
+                "channelId":"11111111-1111-4111-8111-111111111111","pinnedAt":1}
+        }}});
+        let coordinate = record(&raw, community).unwrap();
+        assert_eq!(
+            coordinate,
+            format!("{LEADS_TAG}:https%3A%2F%2Frelay.test:workspace-leads:me")
+        );
+        let ciphertext = host.kit_cipher(raw.to_string(), true).await.unwrap();
+        let mut event = serde_json::json!({"kind":30078,"content":ciphertext,
+            "tags":[["d",coordinate],["t",LEADS_TAG]]});
+        assert_eq!(
+            validate_ciphertext(&host, &event, community).await.unwrap(),
+            raw
+        );
+        // Older clients fetch the catalog tags; a Leads record is never one of them.
+        for tag in [KIT_TAG, ME_KIT_TAG, MANIFEST_TAG] {
+            event["tags"][1][1] = serde_json::json!(tag);
+            assert!(validate_ciphertext(&host, &event, community).await.is_err());
+        }
+        let mut full = raw.clone();
+        let lead = raw["value"]["leads"]["work"].clone();
+        full["value"]["leads"] = (0..101)
+            .map(|i| (format!("w{i}"), lead.clone()))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        assert!(prepare(&full, community).is_err());
+        full["value"]["leads"]
+            .as_object_mut()
+            .unwrap()
+            .remove("w100");
+        assert!(prepare(&full, community).is_ok());
+    }
+    /// The same corpus runs against browser admission in
+    /// `browser-host/channel-kit.test.mjs`.
+    #[test]
+    fn workspace_leads_match_the_shared_admission_corpus() {
+        let cases: Vec<Value> = serde_json::from_str(include_str!(
+            "../../../src/features/channel-templates/workspace-leads-admission-contract.json"
+        ))
+        .unwrap();
+        assert!(cases.len() > 10);
+        for case in cases {
+            let event = serde_json::json!({"tags": case["tags"]});
+            assert_eq!(
+                admission(&event, &case["record"], "https://relay.test").is_ok(),
+                case["accepted"] == true,
+                "{}",
+                case["name"]
+            );
+        }
+    }
     #[tokio::test]
     async fn kit_crypto_round_trips_and_enforces_coordinate_and_community() {
         let host = IdentityHost::fixture();

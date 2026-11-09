@@ -3406,6 +3406,9 @@ function teamFixture(
   const listeners = new Set<() => void>();
   const channelKit: NonNullable<RelaySession["channelKit"]> = {
     available: true,
+    community: "",
+    readRecord: async () => undefined,
+    saveRecord: async () => "",
     snapshot: () => state,
     subscribe(listener) {
       listeners.add(listener);
@@ -3671,6 +3674,9 @@ function spaceFixture(
   };
   const channelKit: NonNullable<RelaySession["channelKit"]> = {
     available: true,
+    community: "",
+    readRecord: async () => undefined,
+    saveRecord: async () => "",
     snapshot: () => catalog,
     subscribe: () => () => {},
     ensure() {},

@@ -96,9 +96,26 @@ export function createSoloRegionFixture(viewer = "a".repeat(64)) {
   let list = { status: "loading" as const, channels };
   const rosterListeners = new Set<() => void>(),
     relayListeners = new Set<() => void>();
+  const readLeads = Object.freeze({ status: "ready" as const, leads: {} });
+  /** Preferences with a read, empty Leads record, so Lead drafts can open. */
+  const withLeads = <T extends object>(preferences: T) =>
+    Object.defineProperties(
+      {},
+      {
+        ...Object.getOwnPropertyDescriptors(preferences),
+        leads: {
+          enumerable: true,
+          value: {
+            ...owner.session.soloPreferences.leads,
+            snapshot: () => readLeads,
+          },
+        },
+      },
+    ) as T & Pick<typeof owner.session.soloPreferences, "leads">;
   const session = {
     ...owner.session,
     viewer,
+    soloPreferences: withLeads(owner.session.soloPreferences),
     channels: {
       ...owner.session.channels,
       list: () => list,
@@ -176,6 +193,7 @@ export function createSoloRegionFixture(viewer = "a".repeat(64)) {
   return {
     service,
     register,
+    withLeads,
     navigate(target: OpenTarget) {
       const result = navigation.navigation.open(target);
       navigation.complete(navigation.navigation.snapshot().attempt, {

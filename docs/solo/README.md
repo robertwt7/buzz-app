@@ -56,6 +56,16 @@ behavior on the label, so a rename touches copy only.
   the record stays live but unreachable. A delete retried after a groups write
   that landed unconfirmed finds the workspace gone and still writes the
   tombstone. Saving another workspace's defaults meanwhile is unaffected.
+- Optional workspace Leads use their own encrypted record (`t`
+  `buzz-workspace-leads-v1`, `d`
+  `buzz-workspace-leads-v1:<community>:workspace-leads:me`), never `groups:me`
+  or a catalog tag. It loads once the catalog is ready, but is read and written
+  apart from it, so a failed read affects only Lead selection; session recovery
+  retries a transient failure. Entries are keyed by workspace ID;
+  readers and writers keep unknown record and entry fields, also on a replaced
+  entry. Leads of deleted workspaces are hidden, removed on a best-effort basis
+  after deletion, and pruned on the next Leads write, against Groups read after
+  the Leads. Nothing writes Leads after a failed read.
 - **Label only:** a private channel without `buzz.solo` is an ordinary Team
   channel, whatever its `about` text. No code reads the retired
   `Buzz session (buzz.sessions/v1)` marker, and there is no migration,

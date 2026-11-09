@@ -3692,3 +3692,42 @@ it("a refused region start forgets its link and gives its prompt and files back 
   expect(screen.getByRole("button", { name: "Remove notes.txt" })).toBeTruthy();
   expect(readView("test", "solo:new-draft", null)).toBeNull();
 });
+it("a region lead draft starts its workspace's lead only while it still targets that workspace", async () => {
+  const test = await projectSetup(),
+    onStarted = vi.fn(),
+    user = userEvent.setup();
+  regionNavigation.set({ source: {}, binding: regionBinding });
+  const key = regionDraftKey(REGION, "work");
+  const view = () => (
+    <SoloDraft
+      session={test.session}
+      scope="test"
+      projectId="work"
+      region={REGION}
+      lead
+      onStarted={onStarted}
+    />
+  );
+  writeView("test", `${key}:new-draft`, taggedDraft("Lead the launch"));
+  const first = render(view());
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(onStarted).toHaveBeenCalledOnce());
+  const lead = test.channelWrites.create.mock.calls[0]?.[0] ?? "";
+  expect(readView("test", regionStartKey(lead), null)).toEqual({
+    region: REGION,
+    workspace: "work",
+    lead: true,
+  });
+  first.unmount();
+  writeView("test", `${key}:new-draft`, taggedDraft("Just a task"));
+  render(view());
+  await user.click(screen.getByRole("button", { name: "Workspace: Work" }));
+  await user.click(await screen.findByRole("menuitemradio", { name: "Other" }));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(onStarted).toHaveBeenCalledTimes(2));
+  const task = test.channelWrites.create.mock.calls[1]?.[0] ?? "";
+  expect(readView("test", regionStartKey(task), null)).toEqual({
+    region: REGION,
+    workspace: "other",
+  });
+});

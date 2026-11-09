@@ -283,20 +283,26 @@ it.each([
   },
 );
 
-it.each(["new", "linked", "agent"])(
-  "shows and selects the ordinary New chat draft row for %s",
+it.each(["new", "linked", "agent", "region"])(
+  "selects ordinary drafts without marking a region draft as New chat (%s)",
   async (route) => {
     const f = fixture();
     writeView(scope, "solo:collapsed-projects", [""]);
     const target = soloDraftTarget(
       scope,
-      route === "agent"
-        ? { agent }
-        : route === "linked"
-          ? { linked: "33333333-3333-4333-8333-333333333333" }
-          : {},
+      route === "region"
+        ? { region: "buzz.region:example:tasks" }
+        : route === "agent"
+          ? { agent }
+          : route === "linked"
+            ? { linked: "33333333-3333-4333-8333-333333333333" }
+            : {},
     );
     act(() => f.navigate(target));
+    if (route === "region") {
+      expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+      return;
+    }
     const draft = await screen.findByRole("button", { name: "New chat" });
     expect(draft).toHaveAttribute("aria-current", "page");
     expect(draft).toHaveAttribute("data-selected", "true");

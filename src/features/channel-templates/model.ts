@@ -61,7 +61,26 @@ export type TextRecord = {
     manifest: TeamManifest | null;
   };
 };
-export type PrivateRecord = KitRecord | PayloadRecord | TextRecord;
+/** Workspace Leads, apart from the catalog so older clients never fetch them. */
+export const LEADS_TAG = "buzz-workspace-leads-v1";
+export type WorkspaceLead = { region: string; channelId: string };
+/** Unknown record and entry fields are kept for later clients. */
+export type LeadsRecord = {
+  version: 1;
+  community: string;
+  deleted: boolean;
+  value: {
+    [key: string]: unknown;
+    type: "workspace-leads";
+    id: "me";
+    leads: Record<string, WorkspaceLead & Record<string, unknown>>;
+  };
+};
+export type PrivateRecord =
+  | KitRecord
+  | PayloadRecord
+  | TextRecord
+  | LeadsRecord;
 export type KitRecord = {
   version: 1 | 2;
   community: string;
@@ -326,6 +345,56 @@ export function textCoordinate(
 ) {
   return `${TEAM_TEXT_TAG}:${encodeURIComponent(community)}:${owner}:${teamId}`;
 }
+export const leadsCoordinate = (community: string) =>
+  `${LEADS_TAG}:${encodeURIComponent(community)}:workspace-leads:me`;
+export function parseLeadsRecord(raw: unknown, community: string): LeadsRecord {
+  const r = object(raw),
+    value = object(r.value);
+  const leads = object(value.leads);
+  if (
+    Object.keys(r).some(
+      (key) => !["version", "community", "deleted", "value"].includes(key),
+    ) ||
+    r.version !== 1 ||
+    r.community !== community ||
+    typeof r.deleted !== "boolean" ||
+    value.type !== "workspace-leads" ||
+    value.id !== "me" ||
+    Object.keys(leads).length > 100
+  )
+    throw new Error("Invalid workspace Leads record");
+  const result: LeadsRecord = {
+    version: 1,
+    community,
+    deleted: r.deleted,
+    value: {
+      ...value,
+      type: "workspace-leads",
+      id: "me",
+      leads: Object.fromEntries(
+        Object.entries(leads).map(([workspace, raw]) => {
+          const lead = object(raw);
+          if (
+            typeof lead.region !== "string" ||
+            !/^buzz\.region:[a-z0-9][a-z0-9.:-]{0,200}$/.test(lead.region) ||
+            typeof lead.channelId !== "string" ||
+            !/^[0-9a-f-]{36}$/.test(lead.channelId)
+          )
+            throw new Error("Invalid workspace lead");
+          return [
+            id(workspace),
+            { ...lead, region: lead.region, channelId: lead.channelId },
+          ];
+        }),
+      ),
+    },
+  };
+  if (
+    new TextEncoder().encode(JSON.stringify(result)).length > KIT_RECORD_BYTES
+  )
+    throw new Error("Workspace Leads storage is full");
+  return result;
+}
 export function parsePrivateRecord(
   raw: unknown,
   community: string,
@@ -335,19 +404,25 @@ export function parsePrivateRecord(
     ? parsePayloadRecord(raw, community)
     : type === "team-text"
       ? parseTextRecord(raw, community)
-      : parseKitRecord(raw, community);
+      : type === "workspace-leads"
+        ? parseLeadsRecord(raw, community)
+        : parseKitRecord(raw, community);
 }
 export function privateCoordinate(record: PrivateRecord) {
   return record.value.type === "team-payload"
     ? payloadCoordinate(record.value)
     : record.value.type === "team-text"
       ? textCoordinate(record.community, record.value.owner, record.value.id)
-      : coordinate(record as KitRecord);
+      : record.value.type === "workspace-leads"
+        ? leadsCoordinate(record.community)
+        : coordinate(record as KitRecord);
 }
 export function privateTag(record: PrivateRecord) {
   return record.value.type === "team-payload"
     ? TEAM_PAYLOAD_TAG
     : record.value.type === "team-text"
       ? TEAM_TEXT_TAG
-      : kitTag(record as KitRecord);
+      : record.value.type === "workspace-leads"
+        ? LEADS_TAG
+        : kitTag(record as KitRecord);
 }

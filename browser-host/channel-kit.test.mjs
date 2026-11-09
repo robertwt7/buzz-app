@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import canvasCases from "../src/features/channel-templates/canvas-signing-contract.json";
 import textCases from "../src/features/channel-templates/team-text-admission-contract.json";
+import leadCases from "../src/features/channel-templates/workspace-leads-admission-contract.json";
 import { getPublicKey, nip44 } from "nostr-tools";
 import { keypair, signed } from "../src/features/relay/testing.ts";
 import {
@@ -321,5 +322,35 @@ it.each(textCases)(
     const admit = () => admitChannelKit(event, owner.secret, textCommunity);
     if (accepted) expect(admit()).toEqual(bind(record));
     else expect(admit).toThrow();
+  },
+);
+
+// The same corpus runs against native admission in `src-tauri/src/relay/kit.rs`.
+it.each(leadCases)(
+  "workspace Leads admission: $name",
+  ({ accepted, record, tags }) => {
+    const key = nip44.v2.utils.getConversationKey(
+      owner.secret,
+      getPublicKey(owner.secret),
+    );
+    const event = signed(owner, {
+      kind: 30078,
+      content: nip44.v2.encrypt(JSON.stringify(record), key),
+      tags,
+    });
+    const admit = () =>
+      admitChannelKit(event, owner.secret, "https://relay.test");
+    // Admission keeps unknown fields, so a prepared write carries them too.
+    if (accepted) {
+      expect(admit()).toEqual(record);
+      expect(
+        JSON.parse(
+          nip44.v2.decrypt(
+            prepareChannelKit(record, owner.secret, "https://relay.test"),
+            key,
+          ),
+        ),
+      ).toEqual(record);
+    } else expect(admit).toThrow();
   },
 );

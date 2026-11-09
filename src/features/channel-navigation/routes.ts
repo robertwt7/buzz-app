@@ -9,6 +9,8 @@ export type SoloDraft = Readonly<{
   linked?: string;
   /** The Solo region label whose source opened this draft. */
   region?: string;
+  /** The region draft starts its workspace's lead. */
+  lead?: true;
 }>;
 
 const agentKey = /^[0-9a-f]{64}$/;
@@ -26,16 +28,18 @@ export function soloDraft(
         key !== "project" &&
         key !== "agent" &&
         key !== "linked" &&
-        key !== "region",
+        key !== "region" &&
+        key !== "lead",
     )
   )
     return;
-  const { project, agent, linked, region } = value;
+  const { project, agent, linked, region, lead } = value;
   if (
-    region !== undefined &&
-    (typeof region !== "string" ||
-      !regionLabels([region]).length ||
-      linked !== undefined)
+    (region !== undefined &&
+      (typeof region !== "string" ||
+        !regionLabels([region]).length ||
+        linked !== undefined)) ||
+    (lead !== undefined && (lead !== true || !region || !project))
   )
     return;
   if (
@@ -61,6 +65,7 @@ export function soloDraft(
     ...(agent ? { agent } : {}),
     ...(linked ? { linked } : {}),
     ...(region ? { region } : {}),
+    ...(lead ? { lead: true as const } : {}),
   };
 }
 

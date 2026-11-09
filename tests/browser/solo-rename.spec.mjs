@@ -32,6 +32,128 @@ async function settledError(page) {
   await animationsSettled(alert.locator(".."), { subtree: true });
 }
 
+// Real hit testing proves the stretched primary target excludes sibling controls.
+// jsdom cannot establish this geometry or the positioned buttons' stacking order.
+for (const variant of [
+  { name: "light-wide", theme: "light", width: 1280, scale: 1 },
+  { name: "dark-narrow", theme: "dark", width: 640, scale: 2 },
+])
+  test(`workspace blank space selects independently of its controls ${variant.name}`, async ({
+    page,
+    app,
+  }) => {
+    await page.setViewportSize({ width: variant.width, height: 1000 });
+    await page.addInitScript(({ theme, scale }) => {
+      localStorage.setItem("buzz-appearance.v1", theme);
+      localStorage.setItem("buzz-font-scale.v1", String(scale));
+    }, variant);
+    await page.goto(
+      `${app.origin}/?solo-region-fixture&compose-workspaces&workspace-hit-targets`,
+    );
+    await newChat(page);
+    await page.evaluate(() => window.fixtureSoloRegion.createWorkspace());
+    const show = page.getByRole("button", {
+      name: "Show navigation",
+      exact: true,
+    });
+    if (await show.isVisible()) await show.click();
+    const title = sidebar(page).getByRole("button", {
+      name: "Work",
+      exact: true,
+    });
+    await expect(title).toBeVisible();
+    const header = title.locator("xpath=ancestor::*[@data-solo-menu-id][1]");
+    await header
+      .getByRole("button", { name: "Hide tasks and chats in Work" })
+      .click();
+    await expect(title).not.toHaveAttribute("aria-current", "page");
+    await expect(
+      sidebar(page).getByRole("button", { name: "Workspace task" }),
+    ).toBeHidden();
+    await header.scrollIntoViewIfNeeded();
+    const toggle = header.getByRole("button", {
+      name: "Show tasks and chats in Work",
+    });
+    const newTask = header.getByRole("button", { name: "New task in Work" });
+    const point = await header.evaluate((row) => {
+      const bounds = row.getBoundingClientRect();
+      const buttons = [...row.querySelectorAll("button")].map((button) =>
+        button.getBoundingClientRect(),
+      );
+      const caret = row
+        .querySelector("[data-solo-disclosure]")
+        .getBoundingClientRect();
+      const xs = [
+        ...new Set([
+          bounds.left,
+          bounds.right,
+          ...buttons.flatMap((box) => [box.left, box.right]),
+        ]),
+      ].sort((a, b) => a - b);
+      const ys = [
+        ...new Set([
+          bounds.top,
+          bounds.bottom,
+          ...buttons.flatMap((box) => [box.top, box.bottom]),
+        ]),
+      ].sort((a, b) => a - b);
+      const points = xs
+        .slice(1)
+        .flatMap((x, i) =>
+          ys
+            .slice(1)
+            .map((y, j) => ({ x: (xs[i] + x) / 2, y: (ys[j] + y) / 2 })),
+        );
+      // Prefer space after the caret. With enlarged text, the only free space
+      // may be above it. Exclude actual buttons and clipped scrollbar gutters.
+      return [...points.filter((p) => p.x >= caret.right), ...points].find(
+        (p) =>
+          !buttons.some(
+            (b) =>
+              p.x >= b.left &&
+              p.x <= b.right &&
+              p.y >= b.top &&
+              p.y <= b.bottom,
+          ) && row.contains(document.elementFromPoint(p.x, p.y)),
+      );
+    });
+    if (!point)
+      throw new Error("Workspace header must have visible blank space");
+    await page.mouse.click(point.x, point.y);
+    await expect(title).toHaveAttribute("aria-current", "page");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const actions = header.getByRole("button", { name: "Actions for Work" });
+    const newTaskItem = page.getByRole("menuitem", { name: "New task" });
+    if (variant.name === "dark-narrow") {
+      // Without room for both controls, New task is reached through Actions.
+      await expect(newTask).toBeHidden();
+      await actions.focus();
+      await page.keyboard.press("Enter");
+      await expect(newTaskItem).toBeFocused();
+      await page.keyboard.press("Enter");
+    } else {
+      await newTask.click();
+    }
+    await expect(title).not.toHaveAttribute("aria-current", "page");
+    await toggle.click();
+    await expect(
+      sidebar(page).getByRole("button", { name: "Workspace task" }),
+    ).toBeVisible();
+    await expect(title).not.toHaveAttribute("aria-current", "page");
+    await actions.click();
+    await expect(
+      page.getByRole("menuitem", { name: "Workspace settings" }),
+    ).toBeVisible();
+    // The menu offers New task at each width.
+    await expect(newTaskItem).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(title).not.toHaveAttribute("aria-current", "page");
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-current", "page");
+    expect(app.report.unexpected).toEqual([]);
+  });
+
 // These exercise native focus loss, actual drawer hit targets and signed live
 // metadata. DOM-only tests cannot establish these browser/host contracts.
 async function holdDetails(page) {
@@ -646,4 +768,38 @@ test.describe("plugin-owned Solo lifecycle", () => {
     ).toEqual([[9008, [["h", id]]]]);
     expect(app.report.unexpected).toEqual([]);
   });
+});
+
+// This protects real DOM focus/selection when the source changes an ordinary
+// row's placement; React/jsdom can prove retained state but not native blur.
+test("task-source recovery retains an ordinary chat editor, caret and unsaved name", async ({
+  page,
+  app,
+}) => {
+  await page.goto(`${app.origin}/?solo-region-fixture&compose-workspaces`);
+  await newChat(page);
+  await row(page, alpha).dblclick();
+  await expect(input(page)).toHaveAttribute("aria-disabled", "false");
+  await input(page).fill("Keep this unsaved name");
+  await input(page).evaluate((field) => field.setSelectionRange(4, 4));
+  for (const status of ["loading", "ready"]) {
+    await page.evaluate(
+      (status) => window.fixtureSoloRegion.status(status),
+      status,
+    );
+    await expect(input(page)).toBeVisible();
+    await expect(input(page)).toBeFocused();
+    await expect(input(page)).toHaveValue("Keep this unsaved name");
+    await expect
+      .poll(() =>
+        input(page).evaluate((field) => [
+          field.selectionStart,
+          field.selectionEnd,
+        ]),
+      )
+      .toEqual([4, 4]);
+  }
+  await input(page).press("Escape");
+  await expect(input(page)).toHaveCount(0);
+  expect(app.report.detailsPublications ?? []).toHaveLength(0);
 });

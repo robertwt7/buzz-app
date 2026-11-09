@@ -312,7 +312,12 @@ function ScopedSidebar({
                       target={props.target}
                       chatIcons={props.chatIcons}
                       chatMenus={props.chatMenus}
-                      renderContents={(ordinary, header, pendingClick) => (
+                      renderContents={(
+                        ordinary,
+                        header,
+                        pendingClick,
+                        composeOrdinary,
+                      ) => (
                         <SoloRegions
                           key={`regions:${scope}:${connection.generation}`}
                           session={connection.session}
@@ -321,6 +326,7 @@ function ScopedSidebar({
                           target={props.target}
                           sidebar={sidebar}
                           ordinary={ordinary}
+                          composeOrdinary={composeOrdinary}
                           pendingClick={pendingClick}
                           groupDisclosure={
                             filter === "all"

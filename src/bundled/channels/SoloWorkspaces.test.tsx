@@ -9,6 +9,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
+import {
+  WorkspaceCompositionContext,
+  RegionWorkspace,
+  RegionChats,
+  type ComposeWorkspaces,
+} from "../../features/channel-navigation/WorkspaceComposition";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { createSidebarPreferencesStore } from "../../features/relay/sidebar-preferences-store";
@@ -111,8 +118,10 @@ function fixture(projectName = "Work") {
       { id: "chat", title: "Planning" },
       { id: "other", title: "Existing chat" },
     ],
+    compose?: ComposeWorkspaces,
   ) => (
     <SoloWorkspaces
+      compose={compose}
       onNew={onNew}
       session={
         {
@@ -356,6 +365,149 @@ it("opens the exact project from an empty project's New chat row", async () => {
     row.focus();
     await user.keyboard("{Enter}");
     expect(h.onNew).toHaveBeenCalledExactlyOnceWith("work");
+  } finally {
+    store.dispose();
+  }
+});
+
+it("shares a workspace frame while keeping lead selection, disclosure and chat creation separate", async () => {
+  const h = fixture();
+  const store = h.store();
+  const onTask = vi.fn();
+  const onSelect = vi.fn();
+  await store.queries.ensure();
+  await store.queries.assign("chat", "work");
+  function View() {
+    const [selected, select] = useState(false);
+    return h.view(
+      store.queries,
+      "workspace-composition",
+      undefined,
+      undefined,
+      (parts) => (
+        <WorkspaceCompositionContext value={parts}>
+          <RegionWorkspace
+            id="work"
+            selected={selected}
+            onSelect={() => {
+              onSelect();
+              select(true);
+            }}
+            onNewTask={onTask}
+          >
+            <button type="button">Workspace task</button>
+          </RegionWorkspace>
+          <RegionChats />
+        </WorkspaceCompositionContext>
+      ),
+    );
+  }
+  render(<View />);
+  const user = userEvent.setup();
+  try {
+    const title = await screen.findByRole("button", { name: "Work" });
+    expect(screen.getAllByRole("button", { name: "Work" })).toHaveLength(1);
+    await user.click(
+      screen.getByRole("button", { name: "Hide tasks and chats in Work" }),
+    );
+    expect(screen.queryByRole("button", { name: "Workspace task" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Planning" })).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    await user.click(title);
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(title).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("button", { name: "Show tasks and chats in Work" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    const card = title.closest("[data-navigation-card]");
+    expect(card).toHaveAttribute("data-tone", "tonal");
+    await user.click(
+      screen.getByRole("button", { name: "Show tasks and chats in Work" }),
+    );
+    expect(card).toContainElement(
+      screen.getByRole("button", { name: "Workspace task" }),
+    );
+    expect(card).toContainElement(
+      screen.getByRole("button", { name: "Planning" }),
+    );
+    await user.click(screen.getByRole("button", { name: "New task in Work" }));
+    expect(onTask).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Actions for Work" }));
+    expect(screen.queryByRole("menuitem", { name: "New task" })).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "New chat in Work" }),
+    ).toBeNull();
+    const create = screen.getAllByRole("button", { name: /New chat/ });
+    expect(create).toHaveLength(1);
+    expect(create[0]).toHaveAccessibleName("New chat in Chats");
+    await user.click(screen.getByRole("button", { name: "New chat in Chats" }));
+    expect(h.onNew).toHaveBeenCalledExactlyOnceWith(undefined);
+  } finally {
+    store.dispose();
+  }
+});
+
+it("selects a Lead workspace only once its separate Leads record is read, showing the owner's failure with Retry", async () => {
+  const h = fixture();
+  const store = h.store();
+  const onSelect = vi.fn();
+  let release: ((ready: boolean) => void) | undefined;
+  const refresh = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const view = (status: "loading" | "ready" | "error") =>
+    h.view(store.queries, "workspace-leads", undefined, undefined, (parts) => (
+      <WorkspaceCompositionContext
+        value={{ ...parts, leads: { status, refresh } }}
+      >
+        <RegionWorkspace id="work" leadWorkspaceId="lead" onSelect={onSelect} />
+      </WorkspaceCompositionContext>
+    ));
+  await store.queries.ensure();
+  // The owner's failure shows before any click.
+  const { rerender, unmount } = render(view("error"));
+  const user = userEvent.setup();
+  try {
+    const title = await screen.findByRole("button", { name: "Work" });
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Lead unavailable.");
+    expect(title.closest("[data-navigation-card]")).toContainElement(alert);
+    await user.click(title);
+    try {
+      expect(refresh).toHaveBeenCalledOnce();
+      // A pending read is not an absent Lead, so no draft opens yet.
+      await user.click(title);
+      expect(refresh).toHaveBeenCalledOnce();
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => release?.(false));
+    }
+    expect(onSelect).not.toHaveBeenCalled();
+    // Retry reads again but does not select.
+    await user.click(
+      within(screen.getByRole("alert")).getByRole("button", { name: "Retry" }),
+    );
+    expect(refresh).toHaveBeenCalledTimes(2);
+    rerender(view("loading"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => release?.(true));
+    rerender(view("ready"));
+    expect(onSelect).not.toHaveBeenCalled();
+    await user.click(title);
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // A read that settles after the card is gone selects nothing.
+    rerender(view("loading"));
+    await user.click(title);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    unmount();
+    await act(async () => release?.(true));
+    expect(onSelect).toHaveBeenCalledOnce();
   } finally {
     store.dispose();
   }

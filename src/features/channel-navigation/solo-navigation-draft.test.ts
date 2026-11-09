@@ -81,3 +81,32 @@ it("names a region's draft owner only while its source is running and ready", as
   await source.fiber.dispose();
   expect(h.service.draftRegion(label)).toBeUndefined();
 });
+
+it("opens a workspace's lead draft only in that workspace and returns the lead with its start", async () => {
+  const h = fixture();
+  const source = await h.register();
+  const binding = source.binding();
+  source.handle.openDraft(binding, { workspace: "work", lead: true });
+  expect(h.navigator.snapshot().attempt.entry.target).toMatchObject({
+    route: {
+      params: {
+        kind: "solo-draft",
+        region: label,
+        project: "work",
+        lead: true,
+      },
+    },
+  });
+  expect(() => source.handle.openDraft(binding, { lead: true })).toThrow(
+    "Invalid workspace",
+  );
+  writeView(h.scope, regionStartKey("chat"), {
+    region: label,
+    workspace: "work",
+    lead: true,
+  });
+  expect(source.handle.started(binding, "chat")).toEqual({
+    workspace: "work",
+    lead: true,
+  });
+});

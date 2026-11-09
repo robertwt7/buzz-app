@@ -16,9 +16,11 @@ import {
   ME_KIT_TAG,
   kitTag,
   parseKitRecord,
+  privateCoordinate,
+  privateTag,
   type KitEntry,
-  type KitRecord,
   type KitValue,
+  type PrivateRecord,
 } from "./model";
 import { CANVAS_HISTORY_PAGE } from "./canvas-limits";
 import { TEAM_MANIFEST_TAG } from "./team-payload";
@@ -220,7 +222,7 @@ export function createChannelKit({
    * guard, enqueue, exact confirmation and selected-head readback. With
    * `resume.id` it confirms that earlier event instead of enqueueing again. */
   async function publish(
-    record: KitRecord,
+    record: PrivateRecord,
     d: string,
     tag: string,
     expected: string | undefined,
@@ -300,8 +302,43 @@ export function createChannelKit({
       saving.delete(d);
     }
   }
+  /** One private record read apart from the catalog, so its failure stays its own. */
+  async function readRecord(d: string, operationSignal?: AbortSignal) {
+    const reading = operationSignal
+      ? AbortSignal.any([signal, operationSignal])
+      : signal;
+    if (!host) throw new Error("Private records are unavailable");
+    const event = selectedHead(
+      await fresh(
+        [{ kinds: [30078], authors: [viewer], "#d": [d], limit: 1 }],
+        reading,
+      ),
+    );
+    if (!event) return;
+    const decoded = await host.decode([event], reading);
+    reading.throwIfAborted();
+    if (decoded.length !== 1 || decoded[0]?.eventId !== event.id)
+      throw new Error("Private record decode mismatch");
+    return { record: decoded[0].record as unknown, eventId: event.id };
+  }
   const capability = Object.freeze({
     available: !!host && !!outbox?.supports(30078),
+    community,
+    readRecord,
+    /** The catalog's write checks for a record it does not list; no catalog refresh. */
+    saveRecord: (
+      record: PrivateRecord,
+      expected: string | undefined,
+      operationSignal?: AbortSignal,
+    ) =>
+      publish(
+        record,
+        privateCoordinate(record),
+        privateTag(record),
+        expected,
+        undefined,
+        operationSignal,
+      ),
     snapshot: () => state,
     subscribe(listener: () => void) {
       listeners.add(listener);
