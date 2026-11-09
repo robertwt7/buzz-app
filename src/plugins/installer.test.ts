@@ -334,6 +334,15 @@ it("checks installed ids even when disabled, source-backed, or contribution-free
   expect(installer.getInstallationStatus("example.missing")).toBe("absent");
 });
 
+it("exposes update discovery as an optional capability with unavailable state until registered", async () => {
+  const { as, core } = setup();
+  const installer = await as("example.market");
+
+  expect(installer.updates).toBe(core.updates);
+  expect(installer.updates?.getSnapshot().status).toBe("unavailable");
+  expect(installer.updates?.queueUpdates([])).toBeUndefined();
+});
+
 it("keeps unavailable configuration distinct from absence and emits presence changes", async () => {
   const { as, set } = setup({ plugins: [] });
   const installer = await as("example.market");

@@ -1065,8 +1065,10 @@ confirmation. **Delete team** asks first; it doesn't delete the team's agents.
   this choice. Buzz saves your choice across updates and restarts. Plugins without
   update support keep their existing manual import flow. Buzz checks eligible Git
   sources at startup and once per hour while the app is visible. Checks do not
-  install or reload plugins. A notice
-  offers **Update and reload**, or **Review permissions** when access increases.
+  install or reload plugins. A notice offers **Update and reload**, or
+  **Review permissions** when access increases; either opens the update review.
+  Even when access is unchanged, choose **Update** in that review to install and
+  reload the candidate.
   Click the notice body to open that plugin’s update checkbox in Manage plugins.
   Its Update, Later, and Dismiss controls keep their own actions.
   Save unfinished forms and stop active plugin workers before you update.

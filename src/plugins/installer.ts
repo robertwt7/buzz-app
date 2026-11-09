@@ -1,6 +1,10 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { PluginManager } from "./manager";
 import { providePluginReviewHold } from "./review-access";
+import {
+  createPluginUpdateCapabilityBridge,
+  type PluginUpdateCapability,
+} from "./updates";
 
 export type GitPluginInstallSource = Readonly<{
   repository: string;
@@ -42,6 +46,8 @@ export type PluginInstaller = Readonly<{
     id: string,
     listener: (status: PluginInstallationStatus) => void,
   ): () => void;
+  /** Optional on older hosts; the current host always exposes an unavailable-capable bridge. */
+  updates?: PluginUpdateCapability;
 }>;
 
 declare module "@deepseek-ai/cordis" {
@@ -229,9 +235,27 @@ export function createPluginInstallRequests({
     | undefined;
   let nextId = 0;
   let reviews = 0;
+  let reviewRevision = 0;
+  const updateBridge = createPluginUpdateCapabilityBridge();
   const listeners = new Set<() => void>();
+  const reviewListeners = new Set<() => void>();
   const emit = () => {
     for (const listener of listeners) listener();
+  };
+  const emitReview = () => {
+    reviewRevision++;
+    for (const listener of reviewListeners) listener();
+  };
+  const holdReview = () => {
+    reviews++;
+    emitReview();
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      reviews--;
+      emitReview();
+    };
   };
   const settle = (id: number, outcome: PluginInstallOutcome) => {
     if (current?.request.id !== id) return;
@@ -240,9 +264,21 @@ export function createPluginInstallRequests({
     current = undefined;
     resolve(outcome);
     emit();
+    emitReview();
   };
   return {
+    updates: updateBridge.capability,
+    registerUpdates: updateBridge.register,
     snapshot: () => current?.request,
+    reviewRevision: () => reviewRevision,
+    subscribeReview(listener: () => void) {
+      reviewListeners.add(listener);
+      return () => reviewListeners.delete(listener);
+    },
+    /** Acquires the shared review slot only when no request or review is active. */
+    tryHoldReview() {
+      return current !== undefined || reviews > 0 ? undefined : holdReview();
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -305,15 +341,7 @@ export function createPluginInstallRequests({
       else settle(id, "cancelled");
     },
     /** Marks a plugin review dialog as open until the returned function runs. */
-    holdReview() {
-      reviews++;
-      let held = true;
-      return () => {
-        if (!held) return;
-        held = false;
-        reviews--;
-      };
-    },
+    holdReview,
     settle,
   };
 }
@@ -351,6 +379,8 @@ export function createPluginInstallCore({
 
   return {
     holdReview: requests.holdReview,
+    updates: requests.updates,
+    registerUpdates: requests.registerUpdates,
     getInstallationStatus,
     subscribeInstallationStatus(
       id: string,
@@ -425,6 +455,10 @@ export function createPluginInstallerService(
 ): PluginInstaller {
   class PluginInstallerService extends Service implements PluginInstaller {
     readonly sources = Object.freeze(["git", "url"] as const);
+
+    get updates() {
+      return host.core.updates;
+    }
 
     constructor() {
       super(ctx, "pluginInstaller");

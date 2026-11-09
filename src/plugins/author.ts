@@ -48,6 +48,15 @@ export type {
   PluginInstaller,
 } from "./installer";
 export type {
+  PluginUpdateCapability,
+  PluginUpdateQueueItemStatus,
+  PluginUpdateQueueSnapshot,
+  PluginUpdateQueueStatus,
+  PluginUpdateSnapshot,
+  PluginUpdateStatus,
+  PluginUpdateToken,
+} from "./updates";
+export type {
   SidebarRestriction,
   SidebarScope,
 } from "../features/channel-navigation/sidebar-scope-service";

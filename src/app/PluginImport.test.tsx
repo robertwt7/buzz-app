@@ -16,11 +16,16 @@ import {
   createPluginInstallRequests,
   type PluginInstallRequest,
 } from "../plugins/installer";
+import { createPluginUpdates } from "../plugins/updates";
 import { PluginImport } from "./PluginImport";
 import userEvent from "@testing-library/user-event";
 import { cloneElement, StrictMode } from "react";
 
 afterEach(cleanup);
+
+function startReview(updates: ReturnType<typeof createPluginUpdates>) {
+  return updates.startNextReview(() => () => {});
+}
 
 it("opens both sources inside Add without a duplicate safety warning, and restores focus on close", async () => {
   const user = userEvent.setup();
@@ -1025,6 +1030,312 @@ it("limits pane updates to the selected plugin without modifying the source prev
   );
   expect(manager.change).not.toHaveBeenCalled();
   expect(preview.candidates).toHaveLength(2);
+});
+
+it("rejects publisher drift and refuses an update after its queue confirmation expires", async () => {
+  const source = {
+    repository: "https://example.com/plugins.git",
+    reference: "main",
+    path: "target",
+  };
+  const manifest = {
+    id: "example.target",
+    name: "Target",
+    apiVersion: 1 as const,
+    updates: { defaultEnabled: true },
+  };
+  const installed: PluginInfo = {
+    manifest,
+    source: "external",
+    enabled: false,
+    revision: "one",
+    previous: null,
+    reloadable: true,
+    error: null,
+    updateSource: source,
+  };
+  const candidate = {
+    path: "target",
+    manifest,
+    revision: "two",
+    publisher: "checked-publisher",
+  };
+  const preview: ImportPreview = {
+    token: "queued-preview",
+    source: source.repository,
+    commit: null,
+    warnings: [],
+    candidates: [candidate],
+  };
+  const installImport = vi.fn(async () => true);
+  const queuedUpdate = {
+    validate: vi.fn(() => undefined),
+    confirmed: vi.fn(() => undefined),
+    settled: vi.fn(),
+    ended: vi.fn(),
+  };
+  const catalog = { profile: "test", location: "test", plugins: [installed] };
+  const manager = {
+    imports: {
+      git: vi.fn(async () => preview),
+      checkGit: vi.fn(async () => preview),
+      discard: vi.fn(async () => {}),
+    },
+    snapshot: () => ({
+      configuration: {
+        status: "ready" as const,
+        externalPluginsPaused: false,
+        catalog,
+      },
+      error: null,
+    }),
+    installImport,
+    change: vi.fn(),
+  } as unknown as PluginManager;
+  let view = render(
+    <PluginImport
+      updateId={manifest.id}
+      updateAction={{
+        source,
+        apply: false,
+        candidateRevision: "two",
+        candidatePublisher: "checked-publisher",
+      }}
+      reviewRequested
+      queuedUpdate={queuedUpdate}
+      authorizeGit={async () => null}
+      plugins={manager}
+      catalog={catalog}
+      busy={false}
+    />,
+  );
+
+  const dialog = await screen.findByRole("dialog", { name: "Update Target" });
+  const update = await within(dialog).findByRole("button", {
+    name: "Update",
+  });
+  candidate.publisher = "new-publisher";
+  fireEvent.click(update);
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+    "The update publisher changed after it was checked. Check for updates again before reviewing it.",
+  );
+  expect(queuedUpdate.validate).not.toHaveBeenCalled();
+  expect(queuedUpdate.confirmed).not.toHaveBeenCalled();
+  expect(installImport).not.toHaveBeenCalled();
+  expect(queuedUpdate.settled).not.toHaveBeenCalled();
+  view.unmount();
+  view = render(
+    <PluginImport
+      updateId={manifest.id}
+      updateAction={{ source, apply: false, candidateRevision: "two" }}
+      reviewRequested
+      queuedUpdate={queuedUpdate}
+      authorizeGit={async () => null}
+      plugins={manager}
+      catalog={catalog}
+      busy={false}
+    />,
+  );
+  const expiredDialog = await screen.findByRole("dialog", {
+    name: "Update Target",
+  });
+  fireEvent.click(
+    await within(expiredDialog).findByRole("button", {
+      name: "Update",
+    }),
+  );
+  expect(await within(expiredDialog).findByRole("alert")).toHaveTextContent(
+    "This update review is no longer active",
+  );
+  expect(queuedUpdate.confirmed).toHaveBeenCalledOnce();
+  expect(installImport).not.toHaveBeenCalled();
+});
+
+it("releases the serialized queue when a confirmed review unmounts and fails", async () => {
+  const source = {
+    repository: "https://example.com/plugins.git",
+    reference: "main",
+    path: ".",
+  };
+  const manifest = {
+    id: "example.target",
+    name: "Target",
+    apiVersion: 1 as const,
+    updates: { defaultEnabled: true },
+  };
+  const installed: PluginInfo = {
+    manifest,
+    source: "external",
+    enabled: false,
+    revision: "one",
+    previous: null,
+    reloadable: true,
+    error: null,
+    updateSource: source,
+  };
+  const preview: ImportPreview = {
+    token: "queued-preview",
+    source: source.repository,
+    commit: null,
+    warnings: [],
+    candidates: [{ path: ".", manifest, revision: "two" }],
+  };
+  const catalog: Catalog = {
+    profile: "test",
+    location: "test",
+    plugins: [installed],
+  };
+  let finish!: (success: boolean) => void;
+  const installImport = vi.fn(
+    () => new Promise<boolean>((resolve) => (finish = resolve)),
+  );
+  const configuration = {
+    status: "ready" as const,
+    externalPluginsPaused: false,
+    catalog,
+  };
+  const manager = {
+    imports: {
+      checkGit: vi.fn(async () => preview),
+      git: vi.fn(async () => preview),
+      discard: vi.fn(async () => {}),
+    },
+    snapshot: () => ({ configuration, error: null }),
+    subscribe: () => () => {},
+    installImport,
+    change: vi.fn(),
+  } as unknown as PluginManager;
+  const updates = createPluginUpdates(manager, async () => null);
+  const token = (await updates.capability.refresh()).candidates[0]?.token;
+  if (!token) throw new Error("Expected a retained update token");
+  const queue = updates.capability.queueUpdates([token]);
+  if (!queue) throw new Error("Expected an accepted fresh queue");
+  expect(startReview(updates)?.token).toBe(token);
+  const queuedUpdate = {
+    validate: () => (updates.isCurrentToken(token) ? undefined : "stale"),
+    confirmed: () => updates.beginOperation(queue.id, token),
+    settled: (outcome: "installed" | "updated" | "cancelled" | "unavailable") =>
+      updates.finishReview(queue.id, token, outcome),
+    ended: (error?: string) => updates.endReview(queue.id, token, error),
+  };
+  const view = render(
+    <PluginImport
+      plugins={manager}
+      catalog={catalog}
+      busy={false}
+      updateId={manifest.id}
+      updateAction={{ source, apply: false, candidateRevision: "two" }}
+      reviewRequested
+      queuedUpdate={queuedUpdate}
+    />,
+  );
+  const review = await screen.findByRole("dialog", { name: "Update Target" });
+  fireEvent.click(within(review).getByRole("button", { name: "Update" }));
+  await waitFor(() => expect(installImport).toHaveBeenCalledOnce());
+  view.unmount();
+  await act(async () => Promise.resolve());
+  await act(async () => finish(false));
+
+  expect(updates.capability.getQueue(queue.id)).toMatchObject({
+    status: "failed",
+    items: [{ status: "failed" }],
+  });
+  expect(updates.getActiveReview()).toBeUndefined();
+  updates.dispose();
+});
+
+it("releases the serialized queue when its candidate disappears before review", async () => {
+  const source = {
+    repository: "https://example.com/plugins.git",
+    reference: "main",
+    path: "target",
+  };
+  const manifest = {
+    id: "example.target",
+    name: "Target",
+    apiVersion: 1 as const,
+    updates: { defaultEnabled: true },
+  };
+  const installed: PluginInfo = {
+    manifest,
+    source: "external",
+    enabled: false,
+    revision: "one",
+    previous: null,
+    reloadable: true,
+    error: null,
+    updateSource: source,
+  };
+  const checkedPreview: ImportPreview = {
+    token: "checked-preview",
+    source: source.repository,
+    commit: null,
+    warnings: [],
+    candidates: [{ path: "target", manifest, revision: "two" }],
+  };
+  const missingPreview: ImportPreview = {
+    ...checkedPreview,
+    token: "missing-preview",
+    candidates: [],
+  };
+  const catalog: Catalog = {
+    profile: "test",
+    location: "test",
+    plugins: [installed],
+  };
+  const installImport = vi.fn(async () => true);
+  const configuration = {
+    status: "ready" as const,
+    externalPluginsPaused: false,
+    catalog,
+  };
+  const manager = {
+    imports: {
+      checkGit: vi.fn(async () => checkedPreview),
+      git: vi.fn(async () => missingPreview),
+      discard: vi.fn(async () => {}),
+    },
+    snapshot: () => ({ configuration, error: null }),
+    subscribe: () => () => {},
+    installImport,
+    change: vi.fn(),
+  } as unknown as PluginManager;
+  const updates = createPluginUpdates(manager, async () => null);
+  const token = (await updates.capability.refresh()).candidates[0]?.token;
+  if (!token) throw new Error("Expected a retained update token");
+  const queue = updates.capability.queueUpdates([token]);
+  if (!queue) throw new Error("Expected an accepted fresh queue");
+  expect(startReview(updates)?.token).toBe(token);
+  const queuedUpdate = {
+    validate: () => (updates.isCurrentToken(token) ? undefined : "stale"),
+    confirmed: () => updates.beginOperation(queue.id, token),
+    settled: (outcome: "installed" | "updated" | "cancelled" | "unavailable") =>
+      updates.finishReview(queue.id, token, outcome),
+    ended: (error?: string) => updates.endReview(queue.id, token, error),
+  };
+
+  render(
+    <PluginImport
+      plugins={manager}
+      catalog={catalog}
+      busy={false}
+      updateId={manifest.id}
+      updateAction={{ source, apply: false, candidateRevision: "two" }}
+      reviewRequested
+      queuedUpdate={queuedUpdate}
+    />,
+  );
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The saved folder or repository no longer contains this plugin at its installed path.",
+  );
+  expect(updates.capability.getQueue(queue.id)).toMatchObject({
+    status: "failed",
+    items: [{ status: "failed" }],
+  });
+  expect(updates.getActiveReview()).toBeUndefined();
+  expect(installImport).not.toHaveBeenCalled();
+  updates.dispose();
 });
 
 it("opens installed details instead of adding another source", async () => {
