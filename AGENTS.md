@@ -100,8 +100,9 @@ ownership boundaries. Resolve answerable questions from evidence; ask before
 deviating from agreed scope or product behavior.
 
 Before planning a change to who can add an agent to a channel, an agent's
-channel role, DMs that include an agent, or what an agent publishes, read
-block/buzz's [`VISION_INFORMATION_FLOW.md`](https://github.com/block/buzz/blob/main/VISION_INFORMATION_FLOW.md) and follow it.
+channel role, DMs that include an agent, what an agent publishes, channel
+visibility or admission rules, or tools that let an agent act with its owner's
+authority, read block/buzz's [`VISION_INFORMATION_FLOW.md`](https://github.com/block/buzz/blob/main/VISION_INFORMATION_FLOW.md) and follow it.
 
 For cross-host changes, follow [shared logic and host boundaries](docs/contributing.md#shared-logic-and-host-boundaries).
 Name the existing feature owner/current callers, preserved behavior or approved
