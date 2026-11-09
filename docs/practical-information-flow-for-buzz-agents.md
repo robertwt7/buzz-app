@@ -1,5 +1,7 @@
 # Practical information-flow for Buzz agents
 
+> **Status:** alternative considered. Buzz follows the channel-based design in block/buzz's [`VISION_INFORMATION_FLOW.md`](https://github.com/block/buzz/blob/main/VISION_INFORMATION_FLOW.md) instead.
+
 Author: Jordan Mecom
 
 Draft

@@ -1,5 +1,7 @@
 # Information-flow control
 
+> **Status:** these crates implement the broker design, an alternative considered. Buzz follows the channel-based design in block/buzz's [`VISION_INFORMATION_FLOW.md`](https://github.com/block/buzz/blob/main/VISION_INFORMATION_FLOW.md) instead.
+
 The policy library is ported from `block/buzz` at
 `c94c7128dd6c5cf12486cad0ed767b4ac21ca56a` (PR #8226).
 
