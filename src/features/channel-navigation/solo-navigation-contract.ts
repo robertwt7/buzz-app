@@ -46,6 +46,18 @@ export type SoloRegionSource = Readonly<{
   actions?: (binding: SoloRegionBinding) => readonly SoloRegionAction[];
   /** Agents a draft from `openDraft` may address. Without it, any available agent. */
   draftAgent?(binding: SoloRegionBinding, pubkey: string): boolean;
+  /** Show and change this chat's workspace in its composer. Read from local
+   * state; a change shows through `read`'s next revision. */
+  workspace?(
+    binding: SoloRegionBinding,
+    channelId: string,
+  ): SoloChatWorkspace | undefined;
+}>;
+/** A region chat's personal Solo workspace. */
+export type SoloChatWorkspace = Readonly<{
+  id?: string;
+  /** Files the chat, or with no ID removes it; rejects with the reason to show. */
+  file(workspaceId: string | undefined): Promise<void>;
 }>;
 /** How a chat this device sent from `openDraft` was started. */
 export type SoloDraftStart = Readonly<{ workspace?: string; lead?: true }>;

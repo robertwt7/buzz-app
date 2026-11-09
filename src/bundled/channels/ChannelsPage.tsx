@@ -39,6 +39,10 @@ import {
   soloDraftTarget,
 } from "../../features/channel-navigation/routes";
 import { WorkspaceControl } from "../../features/solo/WorkspaceControl";
+import {
+  newChat,
+  useRegionWorkspace,
+} from "../../features/solo/chat-workspace";
 import type { ChannelLifecycleAction } from "../../features/relay/channel-lifecycle-protocol";
 import type { CommunityMembership } from "../moderation/membership";
 import { useFirstChannel } from "./first-channel";
@@ -786,6 +790,20 @@ function ChannelWorkspace({
   // The Solo treatment: an agent conversation. In the owner's own chat it
   // also files into a project; the conversation scope owns composer policy.
   const solo = current?.channelType === "solo";
+  // Until a region's chat has a message, `#` can also file it, as its
+  // workspace control does.
+  const filed = useRegionWorkspace(queries, solo ? currentId : undefined);
+  const watched = filed ? currentId : undefined;
+  const fresh = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) =>
+        watched
+          ? queries.channels.subscribeWindow(watched, listener)
+          : () => {},
+      [queries, watched],
+    ),
+    () => !!watched && newChat(queries.channels.window(watched)),
+  );
   // Solo has no main tab workspace; its threads open beside the chat.
   const threadPane = solo ? ("side" as const) : undefined;
   // Confirmations belong to this visit; a Solo conversation that leaves the
@@ -2152,6 +2170,24 @@ function ChannelWorkspace({
               solo ? (
                 <WorkspaceControl session={queries} channelId={current.id} />
               ) : undefined
+            }
+            workspace={
+              filed && fresh
+                ? {
+                    preferences: queries.soloPreferences,
+                    choose: (id) =>
+                      void filed
+                        .file(id || undefined)
+                        .catch((reason: unknown) =>
+                          notify(
+                            reason instanceof Error
+                              ? reason.message
+                              : String(reason),
+                            "error",
+                          ),
+                        ),
+                  }
+                : undefined
             }
             onSend={onComposerSend}
             onCommand={handleCommand}
