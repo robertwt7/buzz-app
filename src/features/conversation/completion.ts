@@ -8,6 +8,7 @@ import type {
   CompletionResult,
   CompletionSuggestion,
 } from "./contracts";
+import { chosenWorkspace } from "./workspace-completion";
 
 export function matchCompletion(
   providers: readonly Contribution<ComposerCompletion>[],
@@ -83,7 +84,10 @@ export function completionResult(result: CompletionResult): CompletionResult {
     )
       continue;
     const edit = item.edit;
-    if ("mentions" in edit) {
+    const host = chosenWorkspace(edit) !== undefined;
+    if (host) {
+      // Host-made and frozen: kept as is.
+    } else if ("mentions" in edit) {
       if (
         !Array.isArray(edit.mentions) ||
         !edit.mentions.length ||
@@ -122,19 +126,24 @@ export function completionResult(result: CompletionResult): CompletionResult {
         ...(typeof item.canSelect === "function"
           ? { canSelect: item.canSelect }
           : {}),
-        edit: Object.freeze(
-          "mentions" in edit && edit.mentions
-            ? {
-                mentions: Object.freeze(
-                  edit.mentions.map((person: MentionRecipient) =>
-                    Object.freeze({ pubkey: person.pubkey, name: person.name }),
-                  ),
-                ),
-              }
-            : "mention" in edit
-              ? { mention: Object.freeze({ ...edit.mention }) }
-              : { text: edit.text },
-        ),
+        edit: host
+          ? edit
+          : Object.freeze(
+              "mentions" in edit && edit.mentions
+                ? {
+                    mentions: Object.freeze(
+                      edit.mentions.map((person: MentionRecipient) =>
+                        Object.freeze({
+                          pubkey: person.pubkey,
+                          name: person.name,
+                        }),
+                      ),
+                    ),
+                  }
+                : "mention" in edit
+                  ? { mention: Object.freeze({ ...edit.mention }) }
+                  : { text: edit.text },
+            ),
       }),
     );
   }

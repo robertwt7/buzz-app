@@ -20,6 +20,11 @@ import { MessageMarkdown } from "../../features/messages/MessageMarkdown";
 import { LinkLabel } from "../links/InlineLink";
 import { ChannelCompletion } from "./ChannelCompletion";
 import {
+  chosenWorkspace,
+  WorkspaceCompletion,
+  type WorkspaceCompletionTarget,
+} from "../../features/conversation/workspace-completion";
+import {
   composerClipboard,
   buzzCopyDocument,
 } from "../../features/messages/composer-clipboard";
@@ -685,3 +690,72 @@ it.each([true, false])(
       );
   },
 );
+function workspaces(names: readonly string[]) {
+  let sections = names.map((name, order) => ({
+    id: name.toLowerCase(),
+    name,
+    order,
+  }));
+  const target = {
+    preferences: {
+      snapshot: () => ({
+        status: "ready",
+        data: { sections, assignments: {} },
+      }),
+    },
+    choose: vi.fn(),
+  } as unknown as WorkspaceCompletionTarget;
+  return {
+    target,
+    set(next: readonly string[]) {
+      sections = next.map((name, order) => ({
+        id: name.toLowerCase(),
+        name,
+        order,
+      }));
+    },
+  };
+}
+it("lists a new chat's workspaces first, by the channel name rule", () => {
+  const t = fixture([channel("dev"), channel("design-reviews")]);
+  const w = workspaces(["Docs", "Design", "Billing"]);
+  render(
+    <WorkspaceCompletion.Provider value={w.target}>
+      {t.element("d")}
+    </WorkspaceCompletion.Provider>,
+  );
+  expect(t.result().items.map((item) => item.id)).toEqual([
+    "workspace:design",
+    "workspace:docs",
+    "design-reviews",
+    "dev",
+  ]);
+  const [first] = t.result().items;
+  expect(first?.label).toBe("Design");
+  expect(first?.detail).toBe("Workspace");
+  expect(first && chosenWorkspace(first.edit)).toBe("design");
+  w.set(["Docs"]);
+  expect(first?.canSelect?.("Enter")).toBe(false);
+});
+it("offers no workspace rows outside a new chat", () => {
+  const t = fixture([channel("dev")]);
+  render(t.element("d"));
+  expect(t.result().items.map((item) => item.id)).toEqual(["dev"]);
+});
+it("lets workspace rows take their place within the row limit", () => {
+  const t = fixture(
+    Array.from({ length: 20 }, (_, i) =>
+      channel(`d${String(i).padStart(2, "0")}`),
+    ),
+  );
+  const w = workspaces(["Design", "Docs"]);
+  render(
+    <WorkspaceCompletion.Provider value={w.target}>
+      {t.element("d")}
+    </WorkspaceCompletion.Provider>,
+  );
+  const ids = t.result().items.map((item) => item.id);
+  expect(ids).toHaveLength(20);
+  expect(ids.slice(0, 2)).toEqual(["workspace:design", "workspace:docs"]);
+  expect(t.result().status).toBe("Keep typing to narrow the list.");
+});

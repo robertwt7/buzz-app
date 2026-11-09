@@ -154,6 +154,11 @@ import type {
   ComposerResource,
 } from "../conversation/contracts";
 import { ComposerCompletions } from "../conversation/ComposerCompletions";
+import {
+  chosenWorkspace,
+  WorkspaceCompletion,
+  type WorkspaceCompletionTarget,
+} from "../conversation/workspace-completion";
 import { MENTION_RESOLVE_TIMEOUT_MS } from "../conversation/completion";
 import { useCompletionEditor } from "../conversation/useCompletionEditor";
 import { formatMediaTime, mediaTimeReply } from "./media-timecode";
@@ -303,6 +308,8 @@ export type MessageComposerProps = {
   requireMention?: boolean | undefined;
   chatPresentation?: boolean | undefined;
   trailingTool?: ReactNode;
+  /** Only while the chat is new: `#` then offers its workspaces first. */
+  workspace?: WorkspaceCompletionTarget | undefined;
   inviteAgents?: boolean | undefined;
   /** Narrows a submission's agents to those its owner accepts. */
   agentFilter?: ((pubkey: string) => boolean) | undefined;
@@ -528,6 +535,7 @@ function Composer({
   chatPresentation = false,
   inviteAgents = false,
   trailingTool,
+  workspace,
 }: MessageComposerProps) {
   const active = useConversationPresentation();
   // Previews replace the list on every message; subscribe to this channel's facts.
@@ -2111,6 +2119,14 @@ function Composer({
       )
         return false;
     }
+    const chosen = chosenWorkspace(edit);
+    if (chosen !== undefined) {
+      // The chat's workspace leaves no text behind; the control shows it.
+      if (!workspace || editing.target || !insert("", undefined, query))
+        return false;
+      workspace.choose(chosen);
+      return true;
+    }
     if ("pending" in edit && edit.pending) {
       // Edits replace prose and add no recipients, so a chip that may become
       // one has no place there: the typed key stays literal.
@@ -3310,18 +3326,22 @@ function Composer({
           {label}
         </label>
         {active && extensions?.completions && (
-          <ComposerCompletions
-            registry={extensions.completions}
-            editor={completion}
-            input={input}
-            session={session}
-            scope={scope}
-            channelId={channelId}
-            threadRootId={threadRootId}
-            inviteAgents={agentChoices && !editing.target}
-            replace={replaceCompletion}
-            resolved={value}
-          />
+          <WorkspaceCompletion.Provider
+            value={editing.target ? undefined : workspace}
+          >
+            <ComposerCompletions
+              registry={extensions.completions}
+              editor={completion}
+              input={input}
+              session={session}
+              scope={scope}
+              channelId={channelId}
+              threadRootId={threadRootId}
+              inviteAgents={agentChoices && !editing.target}
+              replace={replaceCompletion}
+              resolved={value}
+            />
+          </WorkspaceCompletion.Provider>
         )}
         <BackgroundUploadStatus
           session={session}

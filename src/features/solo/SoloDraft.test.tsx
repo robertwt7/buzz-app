@@ -40,6 +40,8 @@ import { AgentsContext } from "../agents/react";
 import type { Agents } from "../agents/service";
 import { MentionCompletion } from "../../bundled/mentions/MentionCompletion";
 import { mentionQuery } from "../../bundled/mentions/mention-query";
+import { ChannelCompletion } from "../../bundled/channels/ChannelCompletion";
+import { channelQuery } from "../../bundled/channels/channel-query";
 import type { ComposerCompletion } from "../conversation/contracts";
 import type { Contribution } from "../../plugins/contributions";
 
@@ -1577,6 +1579,83 @@ it("keeps a locally chosen project when its persistence fails and other draft wr
   } finally {
     storage.mockRestore();
   }
+});
+
+it("`#` chooses New chat's workspace without leaving text, and Send files the chat there", async () => {
+  const f = await projectSetup();
+  const user = userEvent.setup();
+  const started = vi.fn();
+  const empty: [] = [];
+  const none = { snapshot: () => empty, subscribe: () => () => {} };
+  const completions: readonly Contribution<ComposerCompletion>[] = [
+    {
+      id: "channel-typeahead",
+      key: "buzz.channels/channel-typeahead",
+      pluginId: "buzz.channels",
+      revision: "1",
+      title: "Channel",
+      match: ({ text, start }) => channelQuery(text, start),
+      component: ChannelCompletion,
+    },
+  ];
+  // Named, as relay channels are; a joined stream follows the workspace rows.
+  const list = f.session.channels.list;
+  let named: { source: unknown; value: ReturnType<typeof list> } | undefined;
+  const team = {
+    id: "team",
+    name: "other-team",
+    channelType: "stream" as const,
+    members: [f.session.viewer ?? ""],
+  };
+  Object.assign(f.session.channels, {
+    list: () => {
+      const source = list();
+      if (named?.source !== source)
+        named = {
+          source,
+          value: {
+            ...source,
+            channels: [
+              ...source.channels.map((channel) =>
+                Object.assign({ name: "" }, channel),
+              ),
+              team,
+            ],
+          },
+        };
+      return named.value;
+    },
+  });
+  render(
+    <SoloDraft
+      session={f.session}
+      scope="hash-workspace"
+      onStarted={started}
+      extensions={{
+        tools: none,
+        inline: none,
+        completions: { snapshot: () => completions, subscribe: () => () => {} },
+      }}
+    />,
+  );
+  const input = screen.getByRole("textbox");
+  await user.type(input, "Plan #oth");
+  const row = await screen.findByRole("option", { name: /Other/ });
+  expect(
+    screen.getAllByRole("option").map((option) => option.textContent),
+  ).toEqual(["OtherWorkspaceEnter", "other-team"]);
+  expect(row).toHaveAttribute("aria-selected", "true");
+  await user.keyboard("{Enter}");
+  expect(input).toHaveValue("Plan ");
+  expect(
+    screen.getByRole("button", { name: "Workspace: Other" }),
+  ).toBeVisible();
+  expect(screen.queryByRole("option")).toBeNull();
+  await user.type(input, "it");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(started).toHaveBeenCalledOnce());
+  expect(f.assign).toHaveBeenCalledWith(expect.any(String), "other");
+  expect(f.messages.send.mock.calls[0]?.[1]).not.toContain("#");
 });
 
 it("inherits the project's defaults for two consecutive new chats", async () => {

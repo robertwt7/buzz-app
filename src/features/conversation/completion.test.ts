@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
 import { completionResult, matchCompletion } from "./completion";
-import type { CompletionContext, ComposerCompletion } from "./contracts";
+import type {
+  CompletionContext,
+  CompletionEdit,
+  ComposerCompletion,
+} from "./contracts";
+import { chosenWorkspace, workspaceEdit } from "./workspace-completion";
 import type { Contribution } from "../../plugins/contributions";
 const observation = { revision: 1, text: "@hi", start: 3, end: 3 };
 const context = {} as CompletionContext;
@@ -161,4 +166,21 @@ it("copies and freezes batch recipients without allowing malformed or oversized 
       }).items,
     ).toEqual([]);
   }
+});
+it("keeps a host workspace edit and drops a provider's look-alike", () => {
+  const host = workspaceEdit("design");
+  const result = completionResult({
+    items: [
+      { id: "host", label: "Design", edit: host },
+      {
+        id: "plugin",
+        label: "Design",
+        edit: { workspace: "design" } as unknown as CompletionEdit,
+      },
+    ],
+  });
+  expect(result.items.map((item) => item.id)).toEqual(["host"]);
+  expect(result.items[0]?.edit).toBe(host);
+  expect(chosenWorkspace(host)).toBe("design");
+  expect(chosenWorkspace({ text: "#design" })).toBeUndefined();
 });
