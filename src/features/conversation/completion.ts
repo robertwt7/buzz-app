@@ -25,7 +25,11 @@ export type HostCompletionEdit =
       pending?: never;
     }>;
 export type HostCompletionSuggestion = Omit<CompletionSuggestion, "edit"> &
-  Readonly<{ edit: HostCompletionEdit }>;
+  Readonly<{
+    edit: HostCompletionEdit;
+    /** The heading the host shows above a run of rows; bundled providers only. */
+    group?: string;
+  }>;
 export type HostCompletionResult = Omit<CompletionResult, "items"> &
   Readonly<{ items: readonly HostCompletionSuggestion[] }>;
 
@@ -150,6 +154,12 @@ export function completionResult(
         ...(typeof item.detail === "string" ? { detail: item.detail } : {}),
         preview: item.preview,
         ...(item.agent === true ? { agent: true } : {}),
+        ...(typeof item.group === "string" &&
+        item.group &&
+        provider &&
+        isBundledContribution(provider)
+          ? { group: item.group }
+          : {}),
         ...(typeof item.disabled === "string"
           ? { disabled: item.disabled }
           : {}),

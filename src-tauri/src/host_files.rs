@@ -51,13 +51,14 @@ async fn bounded<T: Send + 'static>(
 }
 
 /// Lists a folder with directory resolution's limit on blocking work, and
-/// answers its caller after the read timeout.
+/// answers its caller with `late` after the read timeout.
 pub(crate) async fn bounded_listing<T: Send + 'static>(
+    late: &'static str,
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     tokio::time::timeout(READ_TIMEOUT, bounded(&DIRECTORIES, work))
         .await
-        .map_err(|_| "Listing the repositories folder took too long".to_string())?
+        .map_err(|_| late.to_string())?
 }
 
 /// `path`, absolute or `~/…` (`~\…` too on Windows), or else relative to
@@ -181,7 +182,10 @@ pub(crate) async fn plugin_host_repository_folders<R: tauri::Runtime>(
     use tauri::Manager as _;
     granted(manager, id, revision).await?;
     let home = app.path().home_dir().ok();
-    bounded_listing(move || crate::repositories_folder::folders(&path, home.as_deref())).await
+    bounded_listing(crate::repositories_folder::LATE, move || {
+        crate::repositories_folder::folders(&path, home.as_deref())
+    })
+    .await
 }
 
 // One admitted byte operation; waiting never clones a raw save body. Tokio's

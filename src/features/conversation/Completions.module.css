@@ -64,6 +64,13 @@
   overflow: hidden;
   text-align: left;
 }
+.group {
+  padding: var(--space-1h) var(--space-2) var(--space-1);
+  color: var(--text-subtle);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  letter-spacing: var(--text-caption--letter-spacing);
+}
 .label small {
   display: block;
   color: var(--text-subtle);

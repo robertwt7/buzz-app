@@ -54,7 +54,10 @@ import {
 } from "../../features/agent-harness/core-memory";
 import { readAuthorNames } from "../../features/agent-harness/author-names";
 import { readProject } from "../../features/agent-harness/project";
-import { referencedFolders } from "../../features/agent-harness/referenced-folders";
+import {
+  referencedFolders,
+  referencedSkills,
+} from "../../features/agent-harness/referenced-folders";
 import { SessionControls } from "../../features/agent-harness/session-control";
 import type {
   SessionPlace,
@@ -1344,7 +1347,11 @@ export class ClaudeRuntime {
     ];
     if (directories.length) entry.directories.set(key, directories);
     else if (project) entry.directories.delete(key);
-    const section = [project?.section, folders.section]
+    const section = [
+      project?.section,
+      folders.section,
+      referencedSkills(event, owner, agent.pubkey),
+    ]
       .filter(Boolean)
       .join("\n\n");
     return {

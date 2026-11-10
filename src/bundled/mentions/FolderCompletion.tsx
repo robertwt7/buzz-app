@@ -1,11 +1,5 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useLayoutEffect } from "react";
 import {
   repositoriesFolder,
   repositoryFolders,
@@ -16,6 +10,7 @@ import type {
   CompletionResult,
   ComposerCompletionProps,
 } from "../../features/conversation/contracts";
+import { useHeldListing } from "./held-listing";
 
 /** `!` after a boundary, as `@` mentions are matched, once a query character
  * follows it. A bare `!` or one followed by a space is prose, and `![` starts
@@ -32,49 +27,6 @@ export function folderQuery(text: string, caret: number) {
   return { start, end: caret, query };
 }
 
-type Listing = Readonly<{ rows: readonly RepositoryFolder[]; error?: string }>;
-type Held = {
-  key: string;
-  controller: AbortController;
-  listing: Promise<Listing>;
-  holders: number;
-};
-let last: Held | undefined;
-
-function retire(held: Held) {
-  held.controller.abort();
-  if (last === held) last = undefined;
-}
-
-function hold(scope: string, key: string) {
-  if (last?.key !== key) {
-    // A new `!` query retires the previous one's listing.
-    if (last) retire(last);
-    const controller = new AbortController();
-    const listing = repositoryFolders(scope, controller.signal, (path) =>
-      invoke<readonly RepositoryFolder[]>("repositories_folder_list", { path }),
-    ).then(
-      (rows) => ({ rows }),
-      (reason: unknown) => ({
-        rows: [],
-        error: reason instanceof Error ? reason.message : String(reason),
-      }),
-    );
-    last = { key, controller, listing, holders: 0 };
-  }
-  last.holders += 1;
-  return last;
-}
-
-function release(held: Held) {
-  held.holders -= 1;
-  // A keystroke remounts the provider in the same commit, so its next mount
-  // holds the listing before this runs. A closed query has no holder by then.
-  queueMicrotask(() => {
-    if (!held.holders) retire(held);
-  });
-}
-
 function preference(scope: string) {
   try {
     return repositoriesFolder(scope);
@@ -82,40 +34,6 @@ function preference(scope: string) {
     // The listing reports why the folder cannot be read.
     return "";
   }
-}
-
-/** The community's repositories folders for one open `!` query, listed once
- * however often the host remounts its completion. Reopening the query, a
- * changed preference or `retry` lists them again. Desktop only. */
-function useFolders(scope: string, lifetime: string) {
-  const key = JSON.stringify([scope, lifetime, preference(scope)]);
-  const [attempt, setAttempt] = useState(0);
-  const [listed, setListed] = useState<{
-    key: string;
-    attempt: number;
-    listing: Listing;
-  }>();
-  useEffect(() => {
-    if (!isTauri()) return;
-    let live = true;
-    const held = hold(scope, key);
-    void held.listing.then((listing) => {
-      if (live) setListed({ key, attempt, listing });
-    });
-    return () => {
-      live = false;
-      release(held);
-    };
-  }, [scope, key, attempt]);
-  const retry = useCallback(() => {
-    if (last?.key === key) retire(last);
-    setAttempt((value) => value + 1);
-  }, [key]);
-  const listing =
-    listed?.key === key && listed.attempt === attempt
-      ? listed.listing
-      : undefined;
-  return useMemo(() => listing && { ...listing, retry }, [listing, retry]);
 }
 
 /** `!` on desktop offers the immediate folders of the community's
@@ -131,10 +49,22 @@ export function FolderCompletion({
   "scope" | "channelId" | "threadRootId" | "query" | "publish"
 >) {
   // The host remounts this provider on every keystroke. One `!` token in one
-  // composer is the lifetime that lists the folders once.
-  const folders = useFolders(
-    scope,
-    JSON.stringify([channelId, threadRootId, query.start]),
+  // composer, under one preference, is the lifetime that lists the folders once.
+  const folders = useHeldListing(
+    JSON.stringify([
+      "folders",
+      scope,
+      channelId,
+      threadRootId,
+      query.start,
+      preference(scope),
+    ]),
+    (signal) =>
+      repositoryFolders(scope, signal, (path) =>
+        invoke<readonly RepositoryFolder[]>("repositories_folder_list", {
+          path,
+        }),
+      ),
   );
   useLayoutEffect(() => {
     if (!folders) return;

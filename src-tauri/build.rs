@@ -157,6 +157,7 @@ fn main() {
             "workspace_pick_folder",
             "repositories_folder_validate",
             "repositories_folder_list",
+            "local_skills_list",
             "legacy_communities",
             "plugin_import_folder",
             "plugin_update_check",

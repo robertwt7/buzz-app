@@ -1,7 +1,7 @@
-// Folders an owner's message references with `!` chips, handed to the agent
-// for that turn. Anyone in a chat can sign a folder chip, so only the owner's
-// own chips count, and only for a folder their repositories folder on this
-// device lists now.
+// Folders and skills an owner's message references with `!` and `/` chips,
+// handed to the agent for that turn. Anyone in a chat can sign a chip, so only
+// the owner's own chips count: a folder only when their repositories folder on
+// this device lists it now, a skill only when it names this agent.
 import { invoke } from "@tauri-apps/api/core";
 import {
   repositoryFolders,
@@ -19,6 +19,16 @@ export type ReferencedFolders = Readonly<{
 const NONE: ReferencedFolders = Object.freeze({ section: "", directories: [] });
 /** How long a turn waits for the repositories folder listing. */
 const LIST_TIMEOUT_MS = 4_000;
+
+/** Literal paths that cannot close a prompt section. */
+const quoted = (paths: readonly string[]) =>
+  paths
+    .map((path) =>
+      JSON.stringify(path)
+        .replaceAll("<", "\\u003c")
+        .replaceAll(">", "\\u003e"),
+    )
+    .join(", ");
 
 export async function referencedFolders(
   event: Pick<EventData, "pubkey" | "tags">,
@@ -49,19 +59,34 @@ export async function referencedFolders(
     );
     const directories = ids.filter((id) => listed.has(id));
     if (!directories.length) return NONE;
-    const quoted = directories
-      .map((folder) =>
-        JSON.stringify(folder)
-          .replaceAll("<", "\\u003c")
-          .replaceAll(">", "\\u003e"),
-      )
-      .join(", ");
     return {
-      section: `<referenced-folders>\nThe owner's message references these folders on this device (literal paths): ${quoted}. \`cd\` into the one you need; your workspace keeps your notes.\n</referenced-folders>`,
+      section: `<referenced-folders>\nThe owner's message references these folders on this device (literal paths): ${quoted(directories)}. \`cd\` into the one you need; your workspace keeps your notes.\n</referenced-folders>`,
       directories,
     };
   } catch (error) {
     console.warn("Could not check the referenced folders", error);
     return NONE;
   }
+}
+
+/** The prompt section for the skills the owner's message chose for `agent`
+ * with `/` chips; empty when there are none. It names each SKILL.md; the
+ * agent reads the file itself. */
+export function referencedSkills(
+  event: Pick<EventData, "pubkey" | "tags">,
+  owner: string | undefined,
+  agent: string,
+) {
+  if (!owner || event.pubkey !== owner) return "";
+  let paths: string[];
+  try {
+    paths = readMessageTokens(event.tags)
+      .filter((token) => token.kind === "skill" && token.target === agent)
+      .map((token) => token.id);
+  } catch {
+    return "";
+  }
+  return paths.length
+    ? `<referenced-skills>\nThe owner's message asks you to use these skills on this device. Read each SKILL.md before you start (literal paths): ${quoted(paths)}.\n</referenced-skills>`
+    : "";
 }

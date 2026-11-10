@@ -5780,6 +5780,7 @@ it("reads the list again on refresh and clears the error a failed read left", as
         relayUrl: "wss://relay.example.test",
         owner: viewer,
         picture: "https://cdn.example.test/echo.png",
+        type: "example/echo",
       },
     ],
   });

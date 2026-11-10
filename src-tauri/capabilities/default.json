@@ -103,6 +103,7 @@
     "allow-workspace-pick-folder",
     "allow-repositories-folder-validate",
     "allow-repositories-folder-list",
+    "allow-local-skills-list",
     "allow-legacy-communities",
     "allow-plugin-import-folder",
     "allow-plugin-import-git",

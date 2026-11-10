@@ -62,6 +62,7 @@ mod keep_awake;
 #[cfg(target_os = "macos")]
 mod legacy_cli_shortcut;
 mod legacy_communities;
+mod local_skills;
 mod loopback;
 #[cfg(target_os = "macos")]
 mod media_context_menu;
@@ -80,6 +81,7 @@ mod window_controls;
 mod window_state;
 mod workspace_folder;
 use legacy_communities::legacy_communities;
+use local_skills::local_skills_list;
 use os_idle::get_os_idle_seconds;
 use repositories_folder::{repositories_folder_list, repositories_folder_validate};
 mod relaunch;
@@ -771,6 +773,7 @@ fn commands<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         workspace_pick_folder,
         repositories_folder_validate,
         repositories_folder_list,
+        local_skills_list,
         legacy_communities,
         plugin_import_folder,
         plugin_update_check,

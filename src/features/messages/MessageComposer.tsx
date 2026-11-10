@@ -28,7 +28,10 @@ import {
   useToastNotification,
 } from "../../shared/design-system/ui/Toast";
 import { writeClipboardText } from "../../shared/clipboard";
-import { SelectedMentionContext } from "./selected-mention-context";
+import {
+  AddressedAgentsContext,
+  SelectedMentionContext,
+} from "./selected-mention-context";
 import { DraftMentionRoster } from "./draft-mention-roster";
 import {
   allowsOutsideMentions,
@@ -191,6 +194,7 @@ const noChannels: ReturnType<ComposerSession["channels"]["list"]> = {
   channels: [],
 };
 const noSubscription = () => () => {};
+const noAgents: readonly string[] = [];
 
 type AcceptedDraft = {
   next: MentionDraft;
@@ -3359,18 +3363,22 @@ function Composer({
           <WorkspaceCompletion.Provider
             value={editing.target ? undefined : workspace}
           >
-            <ComposerCompletions
-              registry={extensions.completions}
-              editor={completion}
-              input={input}
-              session={session}
-              scope={scope}
-              channelId={channelId}
-              threadRootId={threadRootId}
-              inviteAgents={agentChoices && !editing.target}
-              replace={replaceCompletion}
-              resolved={chips.length ? { ...value, tokens: chips } : value}
-            />
+            <AddressedAgentsContext.Provider
+              value={editing.target ? noAgents : addressedKeys}
+            >
+              <ComposerCompletions
+                registry={extensions.completions}
+                editor={completion}
+                input={input}
+                session={session}
+                scope={scope}
+                channelId={channelId}
+                threadRootId={threadRootId}
+                inviteAgents={agentChoices && !editing.target}
+                replace={replaceCompletion}
+                resolved={chips.length ? { ...value, tokens: chips } : value}
+              />
+            </AddressedAgentsContext.Provider>
           </WorkspaceCompletion.Provider>
         )}
         <BackgroundUploadStatus

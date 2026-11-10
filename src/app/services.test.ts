@@ -194,6 +194,7 @@ it.each([
       "buzz.emoji/typeahead",
       "buzz.mentions/typeahead",
       "buzz.mentions/folders",
+      "buzz.mentions/skills",
     ]);
     expect(
       services.conversation.inline.snapshot().map(({ key }) => key),

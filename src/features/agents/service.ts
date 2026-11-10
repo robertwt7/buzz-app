@@ -3336,12 +3336,13 @@ export class AgentsService extends Service implements Agents {
       agents: Object.freeze(
         identities
           .filter((identity) => !identity.deleted)
-          .map(({ key, pubkey, name, relay, owner, picture }) =>
+          .map(({ key, pubkey, name, relay, owner, picture, type }) =>
             Object.freeze({
               pubkey,
               name,
               relayUrl: relay,
               owner,
+              type,
               ...(remote.has(key) ? { execution: "remote" as const } : {}),
               ...(picture ? { picture } : {}),
             }),

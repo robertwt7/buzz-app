@@ -125,6 +125,24 @@ html[data-keyboard-navigation] .input:focus-visible:not([aria-disabled]) {
   text-underline-offset: 2px;
   cursor: text;
 }
+/* A skill chip is text that opens its details. */
+.skillChip {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+html[data-keyboard-navigation] .skillChip:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+/* The location follows its popover's title or description. */
+.skillLocation {
+  margin: var(--space-2) 0 0;
+  overflow-wrap: anywhere;
+}
 
 .input blockquote {
   margin: 0;

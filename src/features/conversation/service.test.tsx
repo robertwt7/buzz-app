@@ -338,7 +338,7 @@ it("owns completion registration through disable, replacement and failed activat
 });
 it.each([
   [emoji, ["typeahead"]],
-  [mentions, ["typeahead", "folders"]],
+  [mentions, ["typeahead", "folders", "skills"]],
 ])(
   "bundled plugin registers its own completion providers",
   async (module, ids) => {

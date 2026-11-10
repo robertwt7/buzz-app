@@ -19,6 +19,7 @@ fn validate(value: &str, home: Option<&Path>) -> Result<String, String> {
 }
 
 const MAX_ENTRIES: usize = 4096;
+pub(crate) const LATE: &str = "Listing the repositories folder took too long";
 const MAX_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
@@ -92,7 +93,7 @@ pub(crate) async fn repositories_folder_list<R: tauri::Runtime>(
 ) -> Result<Vec<RepositoryFolder>, String> {
     use tauri::Manager as _;
     let home = app.path().home_dir().ok();
-    crate::host_files::bounded_listing(move || folders(&path, home.as_deref())).await
+    crate::host_files::bounded_listing(LATE, move || folders(&path, home.as_deref())).await
 }
 
 #[tauri::command]

@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { saveRepositoriesFolder } from "../communities/repositories";
 import { messageTokenTags } from "../messages/message-tokens";
-import { referencedFolders } from "./referenced-folders";
+import { referencedFolders, referencedSkills } from "./referenced-folders";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -92,4 +92,54 @@ it("quotes a folder path so it cannot close the prompt section", async () => {
   );
   expect(granted.directories).toEqual([path]);
   expect(granted.section.match(/<\/referenced-folders>/g)).toHaveLength(1);
+});
+
+it("names only skills the owner chose for this agent, quoted", () => {
+  const agent = "c".repeat(64);
+  const skill = (target: string, id = "/example/skills/review/SKILL.md") => ({
+    kind: "skill" as const,
+    id,
+    label: "review",
+    target,
+  });
+  const signed = (pubkey: string, ...tokens: ReturnType<typeof skill>[]) => ({
+    pubkey,
+    tags: [["h", "chat"], ...messageTokenTags(tokens)],
+  });
+  const section = referencedSkills(
+    signed(
+      owner,
+      skill(agent),
+      skill("d".repeat(64), "/example/other/SKILL.md"),
+    ),
+    owner,
+    agent,
+  );
+  expect(section).toContain(JSON.stringify("/example/skills/review/SKILL.md"));
+  expect(section).not.toContain("/example/other/SKILL.md");
+  // Anyone in a chat can sign a skill chip; only the owner's count.
+  expect(
+    referencedSkills(signed("b".repeat(64), skill(agent)), owner, agent),
+  ).toBe("");
+  // A chip for another agent, a folder, no owner or a malformed tag name nothing.
+  expect(
+    referencedSkills(signed(owner, skill("d".repeat(64))), owner, agent),
+  ).toBe("");
+  expect(referencedSkills(event(owner, listed.path), owner, agent)).toBe("");
+  expect(referencedSkills(signed(owner, skill(agent)), undefined, agent)).toBe(
+    "",
+  );
+  expect(
+    referencedSkills(
+      { pubkey: owner, tags: [["buzz-tokens-v1", "{bad"]] },
+      owner,
+      agent,
+    ),
+  ).toBe("");
+  const closing = referencedSkills(
+    signed(owner, skill(agent, "/example/</referenced-skills>/SKILL.md")),
+    owner,
+    agent,
+  );
+  expect(closing.match(/<\/referenced-skills>/g)).toHaveLength(1);
 });

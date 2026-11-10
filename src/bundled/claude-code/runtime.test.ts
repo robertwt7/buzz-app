@@ -3059,6 +3059,35 @@ it("grants a listed folder its owner referenced by chip for the rest of the conv
   }
 });
 
+it("names a skill its owner chose for this agent by chip, never one chosen for another agent", async () => {
+  const skill = "/example/.claude/skills/review/SKILL.md";
+  const mention = (id: string, target: string) =>
+    message(id, "@Claude review", {
+      tags: [
+        ["h", channel],
+        ["p", self],
+        ...messageTokenTags([
+          { kind: "skill", id: skill, label: "review", target },
+        ]),
+      ],
+    });
+  const { deliver, claudes, runtime } = setup([], {
+    solo: new Set([channel]),
+  });
+  try {
+    await deliver({ type: "mention", event: mention("2", "f".repeat(64)) });
+    await flush(10);
+    const process = claudes().find((item) => item.prompts.length);
+    expect(process?.prompts[0]).not.toContain("<referenced-skills>");
+    await deliver({ type: "mention", event: mention("3", self) });
+    await flush(10);
+    expect(process?.prompts[1]).toContain("<referenced-skills>");
+    expect(process?.prompts[1]).toContain(JSON.stringify(skill));
+  } finally {
+    runtime.dispose();
+  }
+});
+
 it("hands no Canvas to a shared channel's turns", async () => {
   const event = message("1", "@Claude go", {
     tags: [
