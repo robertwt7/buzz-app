@@ -51,6 +51,11 @@ import {
 import { scanMarkdown } from "../relay/message-content";
 import type { ComposerResource } from "../conversation/contracts";
 import {
+  composerToken,
+  composerTokenName,
+  type ComposerToken,
+} from "./composer-token";
+import {
   activeBlockFormats,
   apply,
   toggleComposerBlock,
@@ -450,6 +455,7 @@ export function EditableInput({
         key: string;
         source: string;
         resource: ComposerResource | null;
+        semantic: ComposerToken | null;
         pending: PendingChip | null;
         position(): number | undefined;
       }
@@ -564,6 +570,16 @@ export function EditableInput({
         const decorations = current.current
           .decorationsFor(safe)
           .filter((item) => {
+            // A decoration never adopts a semantic chip.
+            if (
+              next.tokens.some(
+                (token) =>
+                  token.node.attrs.semantic &&
+                  item.start < token.end &&
+                  item.end > token.start,
+              )
+            )
+              return false;
             const from = next.position(item.start),
               to = next.position(item.end, -1);
             if (
@@ -633,7 +649,8 @@ export function EditableInput({
                   (item) =>
                     item.start === token.start && item.end === token.end,
                 )
-              : token.node.attrs.resource ||
+              : token.node.attrs.semantic ||
+                token.node.attrs.resource ||
                 (token.node.attrs.pending &&
                   mentionBoundary(next.draft.text, token.end)) ||
                 decorations.some(
@@ -1134,6 +1151,54 @@ export function EditableInput({
           .setMeta("composer-normalized", true)
           .setMeta("addToHistory", false),
       );
+      return true;
+    };
+    /** One undo step over an open query outside literal Markdown; the caret
+     * moves past the chip's trailing space. */
+    const insertToken = (
+      value: ComposerToken,
+      range: { start: number; end: number },
+    ) => {
+      if (!editable() || composing.current || editor.composing) return false;
+      const token = composerToken(value);
+      if (!token) return false;
+      const source = projection();
+      const from = source.position(range.start),
+        to = source.position(range.end, -1);
+      if (
+        source.source(from) !== range.start ||
+        source.source(to) !== range.end
+      )
+        return false;
+      const context = composerMarkdownContext(editor.state.doc, source);
+      if (
+        [...context.protected, ...markdownRanges(context.text).literal].some(
+          (span) => range.start < span.end && range.end > span.start,
+        )
+      )
+        return false;
+      const tr = closeHistory(editor.state.tr).replaceWith(
+        from,
+        to,
+        Fragment.fromArray([
+          composerSchema.nodes.token.create({
+            source: token.label,
+            semantic: token,
+          }),
+          composerSchema.text(" "),
+        ]),
+      );
+      const next = projectComposerDocument(tr.doc);
+      if (
+        next.tokens.filter((item) => item.node.attrs.semantic).length > 32 ||
+        next.draft.text.length > current.current.maxLength
+      )
+        return false;
+      tr.setSelection(
+        Selection.near(tr.doc.resolve(tr.mapping.map(to, 1)), -1),
+      );
+      editor.dispatch(tr.scrollIntoView());
+      editor.focus();
       return true;
     };
     /** True, or the reason shown by the host. The link must survive its context. */
@@ -1818,6 +1883,7 @@ export function EditableInput({
               key: `token-${++tokenHosts}`,
               source: node.attrs.source,
               resource: node.attrs.resource,
+              semantic: composerToken(node.attrs.semantic) ?? null,
               pending: node.attrs.pending,
               position: getPos,
             });
@@ -2332,6 +2398,7 @@ export function EditableInput({
         value: extendPendingMention,
       },
       insertResource: { configurable: true, value: insertResource },
+      insertToken: { configurable: true, value: insertToken },
       toggleFormat: { configurable: true, value: toggleFormat },
       insertLineBreak: {
         configurable: true,
@@ -2576,7 +2643,15 @@ export function EditableInput({
         );
         return createPortal(
           // Host-owned artwork: restore never depends on the providing plugin.
-          host.pending ? (
+          host.semantic ? (
+            <span
+              className={styles.resource}
+              role="img"
+              aria-label={composerTokenName(host.semantic)}
+            >
+              {host.semantic.label}
+            </span>
+          ) : host.pending ? (
             <InlineChip
               address={{ kind: "person", id: host.pending.id }}
               face={{

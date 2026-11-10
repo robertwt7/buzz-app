@@ -1,5 +1,6 @@
 import type { MentionDraft, MentionRecipient } from "./mention-draft";
 import type { ComposerResource } from "../conversation/contracts";
+import type { ComposerToken } from "./composer-token";
 
 export const inlineFormats = [
   {
@@ -138,6 +139,11 @@ export type ComposerInputElement = HTMLDivElement & {
   ): boolean | Promise<boolean>;
   /** Host-owned inline link atom at the caret; a string is the rejection reason. */
   insertResource(resource: ComposerResource): true | string;
+  /** A semantic chip over the open query, one undo step. */
+  insertToken(
+    token: ComposerToken,
+    range: { start: number; end: number },
+  ): boolean;
   toggleFormat(format: ComposerFormat): void;
   insertLineBreak(): boolean;
   editLink(): ComposerLinkEdit | null;

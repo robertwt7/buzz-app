@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useRef } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ComposerCompletions } from "./ComposerCompletions";
 import type { CompletionEditor } from "./useCompletionEditor";
-import type { ComposerCompletion } from "./contracts";
+import type { CompletionResult, ComposerCompletion } from "./contracts";
 import type { Contribution } from "../../plugins/contributions";
 import type { RelaySession } from "../relay/session";
 import type { ComposerInputElement } from "../messages/composer-dom";
 import type { ComposerSnapshot } from "../messages/mention-draft";
 import { channelQuery } from "../../bundled/channels/channel-query";
+import { bundledContribution } from "../../plugins/provenance";
 import * as markdown from "../relay/message-content";
 
 afterEach(() => {
@@ -108,7 +109,20 @@ it("does no additional Markdown parsing on ordinary typing", () => {
   expect(scan).not.toHaveBeenCalled();
 });
 
-function mountPeople(pluginId: string) {
+function mountPeople(
+  pluginId: string,
+  {
+    items = peopleItems,
+    bundled = false,
+    replace = () => true,
+    tokens,
+  }: {
+    items?: readonly object[];
+    bundled?: boolean;
+    replace?: () => boolean;
+    tokens?: readonly { start: number; end: number }[];
+  } = {},
+) {
   // The open popup measures itself and keeps its selection in view.
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
@@ -122,21 +136,7 @@ function mountPeople(pluginId: string) {
       disconnect() {}
     },
   );
-  const items = [
-    {
-      id: "a".repeat(64),
-      label: "Honey",
-      detail: "Managed by Wes",
-      agent: true,
-      edit: { mention: { pubkey: "a".repeat(64), name: "Honey" } },
-    },
-    {
-      id: "b".repeat(64),
-      label: "Hannah",
-      edit: { mention: { pubkey: "b".repeat(64), name: "Hannah" } },
-    },
-  ];
-  const people: Contribution<ComposerCompletion> = {
+  const people = {
     id: "people",
     key: `${pluginId}/people`,
     pluginId,
@@ -148,12 +148,13 @@ function mountPeople(pluginId: string) {
       // One publication for this query lifetime, as providers do.
       const published = useRef(publish);
       useEffect(() => {
-        const withdraw = published.current({ items });
+        const withdraw = published.current({ items } as CompletionResult);
         return withdraw || undefined;
       }, []);
       return null;
     },
-  };
+  } satisfies Contribution<ComposerCompletion>;
+  if (bundled) bundledContribution(people);
   const registered = [people];
   // The host reads only the input's attributes and position.
   const input = document.createElement(
@@ -173,14 +174,28 @@ function mountPeople(pluginId: string) {
       registry={{ snapshot: () => registered, subscribe: () => () => {} }}
       editor={editor}
       input={{ current: input }}
-      replace={() => true}
-      resolved={{ text: "@h", recipients: [] }}
+      replace={replace}
+      resolved={{ text: "@h", recipients: [], ...(tokens ? { tokens } : {}) }}
       session={{} as RelaySession}
       scope="test"
       channelId="c"
     />,
   );
 }
+const peopleItems = [
+  {
+    id: "a".repeat(64),
+    label: "Honey",
+    detail: "Managed by Wes",
+    agent: true,
+    edit: { mention: { pubkey: "a".repeat(64), name: "Honey" } },
+  },
+  {
+    id: "b".repeat(64),
+    label: "Hannah",
+    edit: { mention: { pubkey: "b".repeat(64), name: "Hannah" } },
+  },
+];
 it("marks and announces agents and shows their manager in mention completion", async () => {
   mountPeople("buzz.mentions");
   expect(
@@ -195,4 +210,39 @@ it("ignores the agent flag from providers outside the bundled people providers",
   expect(
     await screen.findByRole("option", { name: /^Honey\s*Managed by Wes$/ }),
   ).not.toBeNull();
+});
+
+const folder = { kind: "folder", id: "/notes", label: "@notes" };
+it.each([true, false])(
+  "hands a chip edit to the composer only from a bundled provider (bundled: %s)",
+  async (bundled) => {
+    const replace = vi.fn(() => true);
+    mountPeople("buzz.mentions", {
+      bundled,
+      replace,
+      items: [
+        { id: "notes", label: "notes", edit: { token: folder } },
+        { id: "text", label: "Text", edit: { text: "text" } },
+      ],
+    });
+    await screen.findByRole("option", { name: "Text" });
+    const option = screen.queryByRole("option", { name: "notes" });
+    if (!bundled) {
+      expect(option).toBeNull();
+      return;
+    }
+    if (!option) throw new Error("Missing chip option");
+    fireEvent.click(option);
+    expect(replace).toHaveBeenCalledWith(
+      { token: folder },
+      { start: 0, end: 2, query: "h" },
+      expect.anything(),
+      "click",
+    );
+  },
+);
+it("opens no query at a trigger inside a resolved chip", () => {
+  mountPeople("buzz.mentions", { tokens: [{ start: 0, end: 2 }] });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(screen.queryByRole("option")).toBeNull();
 });

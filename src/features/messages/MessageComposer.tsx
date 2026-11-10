@@ -38,6 +38,7 @@ import {
 } from "./mention-admission";
 import { rememberMention } from "./mention-history";
 import {
+  composerChips,
   readComposerSnapshot,
   composerMarkdownContext,
   markdownRanges,
@@ -146,7 +147,6 @@ import { ComposerModels, type DraftPicks } from "./ComposerModels";
 import type { MentionPicks } from "../relay/messages";
 import type {
   ConversationExtensions,
-  CompletionEdit,
   CompletionPending,
   CompletionQuery,
   CompletionResolution,
@@ -159,7 +159,10 @@ import {
   WorkspaceCompletion,
   type WorkspaceCompletionTarget,
 } from "../conversation/workspace-completion";
-import { MENTION_RESOLVE_TIMEOUT_MS } from "../conversation/completion";
+import {
+  MENTION_RESOLVE_TIMEOUT_MS,
+  type HostCompletionEdit,
+} from "../conversation/completion";
 import { useCompletionEditor } from "../conversation/useCompletionEditor";
 import { formatMediaTime, mediaTimeReply } from "./media-timecode";
 import { RichComposerInput } from "./RichComposerInput";
@@ -1243,8 +1246,16 @@ function Composer({
     (channel) => !!channel?.archived || !!channel?.readOnly,
   );
   const editDisabled = disabled || editLocked;
+  // Chips stay saved as they are until a build that understands them sends
+  // them.
+  const chips = useMemo(
+    () => composerChips(readComposerSnapshot(value.document)),
+    [value.document],
+  );
+  const unsupportedDraft = !!chips.length;
   const editingDisabled =
     disabled ||
+    unsupportedDraft ||
     admitting ||
     sending ||
     !!accepted ||
@@ -2094,7 +2105,7 @@ function Composer({
     return input.current.insertResource(resource);
   }
   function replaceCompletion(
-    edit: CompletionEdit,
+    edit: HostCompletionEdit,
     query: CompletionQuery,
     observation: ComposerObservation,
     key?: string,
@@ -2143,6 +2154,11 @@ function Composer({
       return insertMentions(edit.mentions, query);
     if ("mention" in edit && edit.mention)
       return insert(`@${edit.mention.name} `, edit.mention, query, typed);
+    if ("token" in edit && edit.token) {
+      if (editing.target) return false;
+      completion.invalidate();
+      return input.current?.insertToken(edit.token, query) ?? false;
+    }
     return (
       typeof edit.text === "string" &&
       insert(
@@ -2515,6 +2531,7 @@ function Composer({
     }
     if (
       disabled ||
+      unsupportedDraft ||
       compactingNow() ||
       accepted ||
       conflict ||
@@ -3158,6 +3175,12 @@ function Composer({
   if (attachmentsExiting && editing.target) setAttachmentsExiting(false);
   const context = (
     <div className={styles.composerContext}>
+      {unsupportedDraft && (
+        <p role="status">
+          This draft has details this version of Buzz cannot send. It is kept
+          unchanged.
+        </p>
+      )}
       {!cached && !submission && (
         <TypingIndicator
           audience="humans"
@@ -3339,7 +3362,7 @@ function Composer({
               threadRootId={threadRootId}
               inviteAgents={agentChoices && !editing.target}
               replace={replaceCompletion}
-              resolved={value}
+              resolved={chips.length ? { ...value, tokens: chips } : value}
             />
           </WorkspaceCompletion.Provider>
         )}

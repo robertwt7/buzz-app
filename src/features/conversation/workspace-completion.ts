@@ -24,7 +24,7 @@ export function workspaceEdit(workspaceId: string): CompletionEdit {
   edits.add(edit);
   return edit as unknown as CompletionEdit;
 }
-export function chosenWorkspace(edit: CompletionEdit) {
+export function chosenWorkspace(edit: object) {
   return edits.has(edit)
     ? (edit as unknown as { workspace: string }).workspace
     : undefined;
