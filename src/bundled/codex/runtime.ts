@@ -41,6 +41,7 @@ import { threadReference } from "../../features/relay/thread-reference";
 import type { ChannelLabel } from "../../features/channels/channel-icon";
 import { appClient, readFile } from "../../buzz-mcp/app-client";
 import { readProject } from "../../features/agent-harness/project";
+import { referencedFolders } from "../../features/agent-harness/referenced-folders";
 import { RESUMED_PROMPT } from "../../buzz-mcp/prompt";
 import { MemoryReads } from "../../features/agent-harness/core-memory";
 import { SessionControls } from "../../features/agent-harness/session-control";
@@ -1620,10 +1621,15 @@ export class CodexRuntime {
     if (wake && !wakeLands(wake, topLevel)) return delivery.ignored?.();
     // Only a Solo chat's Canvas is handed over.
     const canvas = reads.canvas?.bind(reads);
-    const project = solo
-      ? (await readProject(canvas && (() => canvas(channelId, agent.owner))))
-          ?.section
-      : undefined;
+    const [canvasProject, folders] = await Promise.all([
+      solo
+        ? readProject(canvas && (() => canvas(channelId, agent.owner)))
+        : undefined,
+      referencedFolders(event, agent.owner, reads.scope),
+    ]);
+    const project =
+      [canvasProject?.section, folders.section].filter(Boolean).join("\n\n") ||
+      undefined;
     // A stop during the reads deleted this agent's entry; recreating it would
     // reopen the agent.
     delivery.signal.throwIfAborted();

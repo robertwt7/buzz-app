@@ -81,7 +81,7 @@ mod window_state;
 mod workspace_folder;
 use legacy_communities::legacy_communities;
 use os_idle::get_os_idle_seconds;
-use repositories_folder::repositories_folder_validate;
+use repositories_folder::{repositories_folder_list, repositories_folder_validate};
 mod relaunch;
 mod relay;
 mod relay_admin;
@@ -117,8 +117,8 @@ use deep_links::{deep_link_take, deep_link_watch, DeepLinks};
 use dock::{dock_permission, unread_indicator_set};
 use host_command::plugin_host_run_command;
 use host_files::{
-    plugin_host_delete_managed_file, plugin_host_read_file, plugin_host_resolve_directory,
-    plugin_host_save_bytes,
+    plugin_host_delete_managed_file, plugin_host_read_file, plugin_host_repository_folders,
+    plugin_host_resolve_directory, plugin_host_save_bytes,
 };
 use host_mcp::{
     plugin_host_mcp_authorize, plugin_host_mcp_close, plugin_host_mcp_pairing,
@@ -770,6 +770,7 @@ fn commands<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         system_clock::system_hour_cycle,
         workspace_pick_folder,
         repositories_folder_validate,
+        repositories_folder_list,
         legacy_communities,
         plugin_import_folder,
         plugin_update_check,
@@ -803,6 +804,7 @@ fn commands<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         plugin_host_mcp_close,
         plugin_host_read_file,
         plugin_host_resolve_directory,
+        plugin_host_repository_folders,
         nsec_backup_available,
         nsec_backup_confirmed,
         nsec_backup_session,

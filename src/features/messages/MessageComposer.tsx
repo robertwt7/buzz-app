@@ -116,6 +116,11 @@ import {
   type RefObject,
 } from "react";
 import { fullSession, type ComposerSession } from "./composer-session";
+import {
+  draftTokens,
+  messageTokenTags,
+  signMessageTokens,
+} from "./message-tokens";
 import type { RelaySession } from "../relay/session";
 import {
   readView,
@@ -1246,16 +1251,12 @@ function Composer({
     (channel) => !!channel?.archived || !!channel?.readOnly,
   );
   const editDisabled = disabled || editLocked;
-  // Chips stay saved as they are until a build that understands them sends
-  // them.
   const chips = useMemo(
     () => composerChips(readComposerSnapshot(value.document)),
     [value.document],
   );
-  const unsupportedDraft = !!chips.length;
   const editingDisabled =
     disabled ||
-    unsupportedDraft ||
     admitting ||
     sending ||
     !!accepted ||
@@ -2531,7 +2532,6 @@ function Composer({
     }
     if (
       disabled ||
-      unsupportedDraft ||
       compactingNow() ||
       accepted ||
       conflict ||
@@ -2708,6 +2708,8 @@ function Composer({
         agentKeys,
       );
     try {
+      const tokens = draftTokens(captured);
+      messageTokenTags(tokens);
       if (command && onCommand) {
         const handled = onCommand(command, attempt.signal);
         if (handled !== false) {
@@ -2932,6 +2934,16 @@ function Composer({
       ) {
         if (compactingNow(recipients))
           throw new Error("Wait for compaction to finish, or interrupt it.");
+        if (!tokens.length) return publishMessage(uploaded, sender);
+        // A detached window's relay connection would drop the chips.
+        const main = fullSession(sender);
+        if (!main) throw new Error("Send chips from the main window.");
+        return signMessageTokens(tokens, () => publishMessage(uploaded, main));
+      }
+      function publishMessage(
+        uploaded: readonly UploadedAttachment[],
+        sender: ComposerSession,
+      ) {
         return threadRootId
           ? sender.messages.reply(
               channelId,
@@ -2974,6 +2986,7 @@ function Composer({
           attachments: uploaded,
           references,
           picks: sentPicks,
+          ...(tokens.length ? { tokens } : {}),
         };
         const send = followUpMessage(host, message);
         return followUpQueue(host).submit(
@@ -3175,12 +3188,6 @@ function Composer({
   if (attachmentsExiting && editing.target) setAttachmentsExiting(false);
   const context = (
     <div className={styles.composerContext}>
-      {unsupportedDraft && (
-        <p role="status">
-          This draft has details this version of Buzz cannot send. It is kept
-          unchanged.
-        </p>
-      )}
       {!cached && !submission && (
         <TypingIndicator
           audience="humans"

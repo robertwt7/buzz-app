@@ -4,6 +4,7 @@ import {
   readRepositoriesFolder,
   repositoriesContext,
   repositoriesKey,
+  repositoryFolders,
   saveRepositoriesFolder,
 } from "./repositories";
 
@@ -55,4 +56,37 @@ it("rejects invalid paths and fails closed on unreadable or ignored storage", ()
     throw new Error("denied");
   });
   expect(() => repositoriesContext(`${community}:${viewer}`)).toThrow("denied");
+});
+
+it("lists the partition's configured folder and refuses a listing that outlived its preference or caller", async () => {
+  const partition = `${community}:${viewer}`;
+  const rows = [{ name: "app", path: "/code/app", displayPath: "/code/app" }];
+  const list = vi.fn(async (_path: string) => rows);
+  const { signal } = new AbortController();
+  await expect(repositoryFolders(partition, signal, list)).resolves.toBe(rows);
+  expect(list).toHaveBeenLastCalledWith("~/.buzz/REPOS");
+  saveRepositoriesFolder(community, viewer, "/code");
+  saveRepositoriesFolder("https://two.example", viewer, "/other");
+  await repositoryFolders(partition, signal, list);
+  expect(list).toHaveBeenLastCalledWith("/code");
+  list.mockImplementationOnce(async () => {
+    saveRepositoriesFolder(community, viewer, "/moved");
+    return rows;
+  });
+  await expect(repositoryFolders(partition, signal, list)).rejects.toThrow(
+    "changed",
+  );
+  const controller = new AbortController();
+  list.mockImplementationOnce(async () => {
+    controller.abort();
+    return rows;
+  });
+  await expect(
+    repositoryFolders(partition, controller.signal, list),
+  ).rejects.toThrow();
+  list.mockClear();
+  await expect(repositoryFolders("none", signal, list)).rejects.toThrow(
+    "community and account",
+  );
+  expect(list).not.toHaveBeenCalled();
 });

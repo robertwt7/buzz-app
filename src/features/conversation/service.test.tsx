@@ -336,17 +336,20 @@ it("owns completion registration through disable, replacement and failed activat
   );
   expect(broken.service.completions.snapshot()).toHaveLength(0);
 });
-it.each([emoji, mentions])(
-  "bundled plugin registers its own completion provider",
-  async (module) => {
+it.each([
+  [emoji, ["typeahead"]],
+  [mentions, ["typeahead", "folders"]],
+])(
+  "bundled plugin registers its own completion providers",
+  async (module, ids) => {
     const h = harness(module);
     h.runtime.reconcile([h.plugin]);
     await vi.waitFor(() =>
-      expect(h.service.completions.snapshot()).toHaveLength(1),
+      expect(h.service.completions.snapshot().map(({ id }) => id)).toEqual(ids),
     );
-    expect(h.service.completions.snapshot()[0]?.pluginId).toBe(
-      h.plugin.manifest.id,
-    );
+    expect(
+      h.service.completions.snapshot().map(({ pluginId }) => pluginId),
+    ).toEqual(ids.map(() => h.plugin.manifest.id));
   },
 );
 

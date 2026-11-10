@@ -37,6 +37,13 @@ import { AgentSessions, localSessions } from "./sessions";
 import { quoted } from "../../features/agent-harness/turn-records";
 import { wake } from "../../features/agent-harness/wakes";
 import { workspaceCanvas } from "../../features/solo/workspace";
+import { messageTokenTags } from "../../features/messages/message-tokens";
+
+const native = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", async (actual) => ({
+  ...(await actual<typeof import("@tauri-apps/api/core")>()),
+  invoke: native.invoke,
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -2982,6 +2989,74 @@ it("hands a Solo chat's Canvas to each turn and lets its session stay in the wor
   await flush(10);
   expect(third?.prompts[1]).toContain("Disregard any earlier workspace Canvas");
   runtime.dispose();
+});
+
+it("grants a listed folder its owner referenced by chip for the rest of the conversation, never an unlisted one", async () => {
+  vi.stubGlobal("localStorage", { getItem: () => null });
+  const notes = {
+    name: "notes",
+    path: "/example/repos/notes",
+    displayPath: "~/.buzz/REPOS/notes",
+  };
+  native.invoke.mockImplementation(async (command: string) =>
+    command === "repositories_folder_list" ? [notes] : undefined,
+  );
+  const chips = (...paths: string[]) =>
+    messageTokenTags(
+      paths.map((id) => ({ kind: "folder" as const, id, label: "notes" })),
+    );
+  const mention = (id: string, pubkey: string, ...paths: string[]) =>
+    message(id, "@Claude look", {
+      pubkey,
+      tags: [["h", channel], ["p", self], ...chips(...paths)],
+    });
+  const { deliver, claudes, runtime } = setup([], {
+    solo: new Set([channel]),
+  });
+  try {
+    // The owner's chip for a folder their listing lacks grants nothing.
+    await deliver({
+      type: "mention",
+      event: mention("2", alice, "/example/elsewhere"),
+    });
+    await flush(10);
+    const first = claudes().find((process) => process.prompts.length);
+    expect(first?.options.args).not.toContain("--add-dir");
+    expect(first?.prompts[0]).not.toContain("<referenced-folders>");
+
+    // The owner's listed folder restarts the session with it, resumed.
+    await deliver({ type: "mention", event: mention("3", alice, notes.path) });
+    await flush(10);
+    const second = claudes().filter((process) => process.prompts.length)[1];
+    expect(first?.killed).toBe(true);
+    expect(native.invoke).toHaveBeenCalledWith("repositories_folder_list", {
+      path: "~/.buzz/REPOS",
+    });
+    expect(second?.options.args).toContain("--resume");
+    expect(second?.options.args).toEqual(
+      expect.arrayContaining(["--add-dir", notes.path]),
+    );
+    expect(second?.prompts[0]).toContain("<referenced-folders>");
+    expect(second?.prompts[0]).toContain(JSON.stringify(notes.path));
+
+    // A later message without the chip keeps the folder and the session.
+    await deliver({
+      type: "mention",
+      event: message("4", "@Claude more", {
+        tags: [
+          ["h", channel],
+          ["p", self],
+        ],
+      }),
+    });
+    await flush(10);
+    expect(second?.killed).toBe(false);
+    expect(second?.prompts).toHaveLength(2);
+  } finally {
+    runtime.dispose();
+    native.invoke.mockReset();
+    vi.unstubAllGlobals();
+  }
 });
 
 it("hands no Canvas to a shared channel's turns", async () => {

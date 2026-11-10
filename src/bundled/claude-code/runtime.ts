@@ -54,6 +54,7 @@ import {
 } from "../../features/agent-harness/core-memory";
 import { readAuthorNames } from "../../features/agent-harness/author-names";
 import { readProject } from "../../features/agent-harness/project";
+import { referencedFolders } from "../../features/agent-harness/referenced-folders";
 import { SessionControls } from "../../features/agent-harness/session-control";
 import type {
   SessionPlace,
@@ -137,8 +138,11 @@ type Entry = {
   handle?: AgentHandle;
   /** Where each conversation's tools default to: its latest turn's thread. */
   contexts: Map<string, Context>;
-  /** The project folders each Solo chat's latest turn named, for its process. */
+  /** The folders each conversation's process may use: its Solo chat's
+   * latest Canvas folders and every folder its owner referenced. */
   directories: Map<string, readonly string[]>;
+  /** The folders each conversation's owner messages referenced. */
+  referenced: Map<string, readonly string[]>;
   /** Each conversation's latest posting policy: when its turns were handed
    * over, and when all of them settled. */
   policies: Map<
@@ -1315,18 +1319,34 @@ export class ClaudeRuntime {
         item.created_at > seen && (!seen || item.pubkey !== agent.pubkey),
     );
     const signingAuthority = reads?.workflowAuthority();
-    const [names, project] = await Promise.all([
+    const [names, project, folders] = await Promise.all([
       readAuthorNames(
         reads,
         [event, ...unseen.slice(-CONTEXT_LIMIT)],
         signingAuthority,
       ),
       reading,
+      referencedFolders(event, owner, reads?.scope),
     ]);
+    const referenced = [
+      ...new Set([
+        ...(entry.referenced.get(key) ?? []),
+        ...folders.directories,
+      ]),
+    ];
+    if (referenced.length) entry.referenced.set(key, referenced);
     // An unread Canvas keeps the folders the chat had, not restarting it.
-    if (project?.directories.length)
-      entry.directories.set(key, project.directories);
+    const directories = [
+      ...new Set([
+        ...(project ? project.directories : (entry.directories.get(key) ?? [])),
+        ...referenced,
+      ]),
+    ];
+    if (directories.length) entry.directories.set(key, directories);
     else if (project) entry.directories.delete(key);
+    const section = [project?.section, folders.section]
+      .filter(Boolean)
+      .join("\n\n");
     return {
       key,
       event,
@@ -1343,7 +1363,7 @@ export class ClaudeRuntime {
       total: earlier.length + 1,
       names,
       ...(signingAuthority ? { signingAuthority } : {}),
-      ...(project?.section ? { project: project.section } : {}),
+      ...(section ? { project: section } : {}),
     };
   }
 
@@ -1370,6 +1390,7 @@ export class ClaudeRuntime {
       contexts: new Map(),
       policies: new Map(),
       directories: new Map(),
+      referenced: new Map(),
     };
     // Each process reads files where it was started, and keeps the tool list
     // it was given, until it is replaced.

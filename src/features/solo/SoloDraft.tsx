@@ -41,6 +41,7 @@ import { draftLifetime } from "./default-lifetime";
 import { WorkspaceControl } from "./WorkspaceControl";
 import { rememberedMentions } from "../messages/remembered-mentions";
 import { composerMarkdown } from "../messages/composer-markdown";
+import { draftTokens, signMessageTokens } from "../messages/message-tokens";
 import {
   addressingOnly,
   followupDraft,
@@ -510,23 +511,24 @@ export function SoloDraft({
         recipients,
       );
       try {
-        if (Object.keys(firstPicks).length)
-          session.messages.send(
-            channelId,
-            text,
-            recipients,
-            uploaded,
-            undefined,
-            [],
-            firstPicks,
-          );
-        else
-          session.messages.send(
-            channelId,
-            text,
-            recipients,
-            ...(uploaded.length ? [uploaded] : []),
-          );
+        signMessageTokens(draftTokens(draft), () =>
+          Object.keys(firstPicks).length
+            ? session.messages.send(
+                channelId,
+                text,
+                recipients,
+                uploaded,
+                undefined,
+                [],
+                firstPicks,
+              )
+            : session.messages.send(
+                channelId,
+                text,
+                recipients,
+                ...(uploaded.length ? [uploaded] : []),
+              ),
+        );
         files.clear();
         writeView(
           scope,

@@ -411,6 +411,14 @@ revokes all of them, and a pairing unused for 30 days expires.
   a Nexus task, shows the workspace control when its plugin files it; until
   that chat's first message, **#** offers its workspaces too, and choosing one
   files the chat right away.
+- **Folder chips.** In the desktop app, type **!** and part of a folder name in
+  any composer to list matching folders in this community's repositories folder
+  (**Local settings**). Choosing one adds it to the message as a chip; the
+  message shows the folder's name. When you send it to your own Claude or Codex
+  agent on this device, the agent is told the folder's path, and Claude may also
+  work in that folder for the rest of the conversation. A chip someone else
+  sends, or a folder no longer in your repositories folder, grants nothing.
+  A bare **!**, or **!** before a space, stays text.
 - **Activity** (the bell at the top of the Messages sidebar) collects DMs, ordinary responses in Solo chats, mentions of you, and
   replies in threads you started, replied in, or follow. Solo chats appear under All, not DMs; their nested
   threads stay separate. Agent-only coordination stays out. The tabs (All, Threads, Mentions, DMs, Reactions) narrow it by

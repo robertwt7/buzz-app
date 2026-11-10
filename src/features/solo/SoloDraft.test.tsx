@@ -1,9 +1,18 @@
 // @vitest-environment jsdom
+import {
+  MESSAGE_TOKENS_TAG,
+  signedMessageTokenTags,
+} from "../messages/message-tokens";
 import "@testing-library/jest-dom/vitest";
 import { webcrypto } from "node:crypto";
 import { projectTemplateId } from "./workspace";
 import { composerDOMFixture } from "../messages/composer-testing";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { assert, afterEach, beforeEach, expect, it, vi } from "vitest";
+import { mentionDraft } from "../messages/mention-draft";
+import {
+  projectComposerDocument,
+  readComposerDocument,
+} from "../messages/composer-document";
 import {
   act,
   cleanup,
@@ -3809,4 +3818,51 @@ it("a region lead draft starts its workspace's lead only while it still targets 
     region: REGION,
     workspace: "other",
   });
+});
+it("starts a New chat from a saved folder chip and signs the chip into its first message", async () => {
+  const f = setup(),
+    started = vi.fn();
+  const chip = { kind: "folder", id: "/repo", label: "@repo" };
+  // The relay writer reads the chips the draft is signing as it sends.
+  let signed: string[][] = [];
+  f.messages.send.mockImplementation(() => {
+    signed = signedMessageTokenTags();
+    return "e".repeat(64);
+  });
+  const own = projectComposerDocument(
+    readComposerDocument(mentionDraft(taggedDraft("Fix ")), []),
+  ).draft;
+  const doc = own.document?.content as {
+    content: { content: unknown[] }[];
+  };
+  const [paragraph] = doc.content;
+  assert.exists(paragraph);
+  writeView("test", "solo:new-draft", {
+    ...own,
+    document: {
+      version: 1,
+      content: {
+        ...doc,
+        content: [
+          {
+            ...paragraph,
+            content: [
+              ...paragraph.content,
+              { type: "token", attrs: { source: "@repo", semantic: chip } },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  render(<SoloDraft session={f.session} scope="test" onStarted={started} />);
+  expect(screen.getByRole("img", { name: "Folder @repo" })).toBeVisible();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(started).toHaveBeenCalledOnce());
+  expect(f.messages.send.mock.calls[0]?.[1]).toBe(
+    "@Member agent Fix &#64;repo",
+  );
+  expect(signed).toEqual([[MESSAGE_TOKENS_TAG, JSON.stringify([chip])]]);
 });

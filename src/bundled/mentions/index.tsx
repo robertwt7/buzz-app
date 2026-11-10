@@ -2,6 +2,7 @@ import { MentionCompletion } from "./MentionCompletion";
 import { mentionQuery } from "./mention-query";
 import type { PluginModule } from "../../plugins/api";
 import { MentionPicker } from "./MentionPicker";
+import { FolderCompletion, folderQuery } from "./FolderCompletion";
 
 export const inject = ["conversation"];
 export const apply: PluginModule["apply"] = (ctx) => {
@@ -11,6 +12,12 @@ export const apply: PluginModule["apply"] = (ctx) => {
     order: -10,
     match: ({ text, start }) => mentionQuery(text, start),
     component: MentionCompletion,
+  });
+  ctx.conversation.registerCompletion({
+    id: "folders",
+    title: "Folders",
+    match: ({ text, start }) => folderQuery(text, start),
+    component: FolderCompletion,
   });
   ctx.conversation.registerTool({
     id: "picker",

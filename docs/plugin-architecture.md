@@ -1591,6 +1591,19 @@ absolute path without symbolic links, in the platform's ordinary form, and
 creates it if missing, as a process's `cwd` is. Both act with the user's full
 access; the import preview says so.
 
+`ctx.host.repositoryFolders(binding, signal)` lists the repositories folder that
+the binding's community and account configured in **Local settings**, or the
+default `~/.buzz/REPOS`. It returns immediate real directories as
+`{ name, path, displayPath }`, sorted by name, with absolute paths under the
+folder's canonical path. It follows a linked repositories folder but not linked
+children, never recurses or creates, and rejects past 4096 entries or a 1 MiB
+result, without a partial result. The plugin never names the path: the app
+renderer reads the preference and passes it to native code, which checks the
+`files` grant before any filesystem work. The app's own `!` folder chips use
+the same listing through a command for the trusted app renderer. A sent
+message carries its chips in one `buzz-tokens-v1` tag that only the app's
+composers sign; trust a chip only as far as you trust the message's author.
+
 Bundled host grants use the effective compiled manifest at revision `bundled` and
 require the plugin to be enabled in the native catalog. External grants require the
 enabled current artifact and its integrity checks; safe mode pauses external

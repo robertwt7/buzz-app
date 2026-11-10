@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MESSAGE_TOKENS_TAG, signedMessageTokenTags } from "./message-tokens";
 import { Context } from "@deepseek-ai/cordis";
 import { PluginRuntime } from "../../plugins/runtime";
 import { ConversationService } from "../conversation/service";
@@ -14466,7 +14467,7 @@ it("guards automatic recipient changes using the current draft prose", () => {
   act(() => expect(replace?.([second])).toBe(true));
 });
 
-it("inserts a bundled provider's chip as one atom and keeps it unsent until chips ship", () => {
+it("inserts a bundled provider's chip as one atom and signs it into the sent message", async () => {
   const publishes: ComposerCompletionProps["publish"][] = [];
   function Completion({ publish }: ComposerCompletionProps) {
     useLayoutEffect(() => {
@@ -14507,10 +14508,19 @@ it("inserts a bundled provider's chip as one atom and keeps it unsent until chip
   expect(
     within(h.input()).getByRole("img", { name: "Folder @notes" }),
   ).toBeVisible();
+  // The relay writer reads the chips the composer is signing as it sends.
+  let signed: string[][] = [];
+  h.messages.send.mockImplementation(() => {
+    signed = signedMessageTokenTags();
+    return "channel-id";
+  });
   h.submit();
-  expect(screen.getByText(/cannot send/)).toBeVisible();
-  expect(h.messages.send).not.toHaveBeenCalled();
-  expect(h.input()).toHaveValue("Use @notes ");
+  await waitFor(() => expect(h.messages.send).toHaveBeenCalledTimes(1));
+  // The label is literal text in place: it never becomes a mention.
+  expect(h.messages.send.mock.calls[0]?.[1]).toBe("Use &#64;notes ");
+  expect(signed).toEqual([[MESSAGE_TOKENS_TAG, JSON.stringify([folder])]]);
+  // Nothing is left for a later, unrelated send.
+  expect(signedMessageTokenTags()).toEqual([]);
 });
 
 /** A mention provider the test publishes for, over the real `@` syntax. */

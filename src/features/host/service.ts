@@ -2,6 +2,8 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type {} from "../../plugins/api";
 import { nativeIdentityEnabled } from "../identity/service";
+import type { SoloRegionBinding } from "../channel-navigation/solo-navigation-contract";
+import { repositoryFolders } from "../communities/repositories";
 
 export type HostRequest = Readonly<{
   url: string;
@@ -175,6 +177,11 @@ type McpEvent =
  * This permits token reuse after initialization. The handler must bind identity
  * itself and grant every client the same authority. Defaults to false. */
 export type HostMcpOptions = Readonly<{ sharedSession?: boolean }>;
+export type HostRepositoryFolder = Readonly<{
+  name: string;
+  path: string;
+  displayPath: string;
+}>;
 export interface Host {
   externalMcpPairing?(
     operation: "get" | "resume" | "revoke",
@@ -203,6 +210,14 @@ export interface Host {
    * links, created if missing, for a plugin whose manifest declares
    * `host.files`. Desktop only. */
   resolveDirectory?: (path: string) => Promise<string>;
+  /** The immediate folders, sorted by name, of the repositories folder that
+   * `binding`'s community and account configured, for a plugin whose manifest
+   * declares `host.files`. Never creates it or follows a linked child. Rejects
+   * past 4096 entries or a 1 MiB listing. Desktop only. */
+  repositoryFolders?: (
+    binding: SoloRegionBinding,
+    signal: AbortSignal,
+  ) => Promise<readonly HostRepositoryFolder[]>;
   request(input: HostRequest): Promise<HostResponse>;
   /** POST-only, desktop and compatible native host required. A repeated call
    * authority rejects with unknown outcome, never resubmits or caches success.
@@ -609,6 +624,25 @@ export class HostService extends Service implements Host {
       revision: owner.revision,
       path,
     }).catch(rethrow);
+  }
+
+  async repositoryFolders(
+    binding: SoloRegionBinding,
+    signal: AbortSignal,
+  ): Promise<readonly HostRepositoryFolder[]> {
+    const owner = this.ctx.pluginOwner;
+    if (!owner || !isTauri())
+      throw new Error("Files require an installed desktop plugin");
+    return repositoryFolders(binding.scope, signal, (path) =>
+      invoke<readonly HostRepositoryFolder[]>(
+        "plugin_host_repository_folders",
+        {
+          id: owner.id,
+          revision: owner.revision,
+          path,
+        },
+      ).catch(rethrow),
+    );
   }
 
   async request(input: HostRequest): Promise<HostResponse> {

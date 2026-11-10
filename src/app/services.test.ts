@@ -190,7 +190,11 @@ it.each([
     ).toEqual(["buzz.emoji/picker", "buzz.mentions/picker"]);
     expect(
       services.conversation.completions.snapshot().map(({ key }) => key),
-    ).toEqual(["buzz.emoji/typeahead", "buzz.mentions/typeahead"]);
+    ).toEqual([
+      "buzz.emoji/typeahead",
+      "buzz.mentions/typeahead",
+      "buzz.mentions/folders",
+    ]);
     expect(
       services.conversation.inline.snapshot().map(({ key }) => key),
     ).toEqual(["buzz.emoji/custom"]);
