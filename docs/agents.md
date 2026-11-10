@@ -1228,7 +1228,7 @@ existing dev server once to receive typing; frontend HMR alone is insufficient.
 ### Transcript
 
 `activityTranscript` (`src/features/agents/activity-transcript.ts`) is a
-display projection over session-owned records, not a second store; the bubble's
+display projection over session-owned records, not a second store; the popup's
 latest-tool line uses it. It
 reads allowlisted ACP fields into turns: the triggering prompt (author and content
 from the `<buzz-event>` framing, other sections collapsed), the session's system
@@ -1346,9 +1346,10 @@ When no live activity bubble on the triggering message shows an agent, the live
 conversation indicator remains visible while it works, even when recorded
 activity is collapsed or expanded. While that bubble shows, it is the agent's
 working indicator and the conversation adds no second one; the conversation cue
-returns once recorded history owns the work. The indicator keeps dots beside
-current tool labels; reduced motion leaves the dots static. Activity text may
-shimmer too, but does not replace that persistent working cue.
+returns once recorded history owns the work. The indicator keeps stable typing
+dots while current tool details remain in its popup and transcript. Reduced
+motion leaves the dots static. Recorded activity text may shimmer while live,
+but does not replace that persistent working cue.
 When local request evidence is available, old activity does not inherit the
 working/thinking state of a different request in the same thread.
 

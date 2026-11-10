@@ -524,15 +524,12 @@ function ActivityBubble({
     current && !current.lifecycle
       ? currentActivity(current.records, current.turns)
       : undefined;
-  const stepText = current?.step
-    ? label(current)
-    : currentPreview
-      ? [currentPreview.title, currentPreview.detail]
-          .filter(Boolean)
-          .join(" · ")
-      : entries.length === 1
-        ? current?.remoteStatus
-        : undefined;
+  // Keep the useful execution-location fallback, but do not present a possibly
+  // stale tool snapshot as the current action after other messages have landed.
+  const remoteFallback =
+    !current?.step && !currentPreview && entries.length === 1
+      ? current?.remoteStatus
+      : undefined;
   const avatars = (group: Entry[]) => (
     <AvatarStack
       size="mini"
@@ -550,8 +547,8 @@ function ActivityBubble({
         <span className={styles.summaryActivity} data-thread-working="">
           {(working || waiting) && (
             <ActivityStepPreview
-              text={stepText}
               state={stepping ? "working" : "waiting"}
+              remoteFallback={remoteFallback}
             />
           )}
           {entries
@@ -612,8 +609,16 @@ function ActivityBubble({
   const activityLabel = `View agent activity: ${entries
     .map((entry) => {
       const control = controls.get(entry.agent);
+      const hasCurrentStep =
+        entry.working &&
+        (entry.step ||
+          (!entry.lifecycle && currentActivity(entry.records, entry.turns)));
       const status =
-        control && stops.has(control.key) ? "Stopping…" : label(entry);
+        control && stops.has(control.key)
+          ? "Stopping…"
+          : hasCurrentStep
+            ? "working"
+            : label(entry);
       return `${entry.name}, ${entry.remoteStatus ? "remote, " : ""}${status}`;
     })
     .join("; ")}`;

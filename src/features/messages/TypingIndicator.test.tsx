@@ -231,11 +231,10 @@ it.each([
       ],
     });
     render(<TypingIndicator session={f.session} channelId="channel" />);
-    const trigger = screen.getByRole("button", { name: label });
-    expect(trigger.querySelector(".tabler-icon-cloud")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
+    const trigger = screen.getByRole("button", {
+      name: "Activity: Agent working",
+    });
+    expect(trigger).not.toHaveTextContent(label);
     await user.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "Working now" });
     expect(within(dialog).getByText(label, { exact: true })).toBeVisible();
@@ -252,7 +251,7 @@ it.each([
       })),
     };
     f.update([]);
-    expect(trigger.querySelector(".tabler-icon-cloud")).toBeNull();
+    expect(trigger).toHaveAccessibleName("Activity: Agent working");
   },
 );
 
@@ -1021,7 +1020,7 @@ it("announces split human and agent activity once from the composer", () => {
   );
 });
 
-it("keeps dots beside a local tool step", () => {
+it("keeps the live cue stable while the current step stays in its chooser", async () => {
   const f = fixture();
   f.update([], {
     local: [
@@ -1045,9 +1044,17 @@ it("keeps dots beside a local tool step", () => {
       inFlow
     />,
   );
-  const trigger = screen.getByRole("button", { name: "Reading notes.txt" });
-  expect(trigger).toHaveTextContent("Reading notes.txt");
+  const trigger = screen.getByRole("button", {
+    name: "Activity: Agent working",
+  });
+  expect(trigger).not.toHaveTextContent("Reading notes.txt");
   expect(trigger.querySelector('[data-state="working"]')).not.toBeNull();
+  await userEvent.setup().click(trigger);
+  expect(
+    within(
+      await screen.findByRole("dialog", { name: "Working now" }),
+    ).getByText("Reading notes.txt"),
+  ).toBeVisible();
 });
 
 it.each([undefined, root])(
@@ -1189,12 +1196,15 @@ it("keeps a new request's thinking signal separate from old activity in the same
     local: [{ ...waiting, state: "working", step: { tool: "Thinking" } }],
   });
   const thinking = screen.getByRole("button", {
-    name: "Thinking",
+    name: "Activity: Agent working",
   });
+  expect(thinking).not.toHaveTextContent("Thinking");
   expect(thinking.querySelector('[data-state="working"]')).not.toBeNull();
   expect(screen.getByText(old.content)).not.toHaveAttribute("data-active");
   f.update([], { local: [{ ...waiting, state: "done" }] });
-  expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Activity: Agent working" }),
+  ).toBeNull();
   expect(screen.getByRole("status")).toBeEmptyDOMElement();
 });
 
@@ -1239,13 +1249,19 @@ it("keeps one agent's simultaneous thread indicators independent", () => {
   );
   const one = within(screen.getByRole("region", { name: "First thread" }));
   const two = within(screen.getByRole("region", { name: "Second thread" }));
-  expect(one.getByRole("button", { name: "Thinking" })).toBeVisible();
+  expect(
+    one.getByRole("button", { name: "Activity: Agent working" }),
+  ).toBeVisible();
   expect(one.queryByText("Reading notes.txt")).toBeNull();
-  expect(two.getByRole("button", { name: "Reading notes.txt" })).toBeVisible();
+  expect(
+    two.getByRole("button", { name: "Activity: Agent working" }),
+  ).toBeVisible();
   expect(two.queryByText("Thinking")).toBeNull();
   f.update([], { local: [{ ...first, state: "done" }, second] });
   expect(one.queryByRole("button")).toBeNull();
-  expect(two.getByRole("button", { name: "Reading notes.txt" })).toBeVisible();
+  expect(
+    two.getByRole("button", { name: "Activity: Agent working" }),
+  ).toBeVisible();
   f.update([], {
     local: [
       { ...first, state: "done" },

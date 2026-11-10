@@ -92,7 +92,8 @@ test("local agent receipt, work and failure agree across sidebar, thread and exa
     firstRow.getByRole("button", { name: /^View agent activity:/ }),
   ).toHaveCount(0);
   await page.evaluate((id) => window.localAgentFixture.handover(id), second.id);
-  await expect(waiting).toContainText("Reading notes.txt");
+  await expect(waiting).toHaveAccessibleName(/Local tester, working/);
+  await expect(waiting).not.toContainText("Reading notes.txt");
   // The message's live bubble is the only working indicator: the thread tail
   // adds no second one. Its dots stay visible without motion; jsdom cannot
   // prove CSS visibility.
@@ -231,7 +232,7 @@ test("Stop in a message's activity ends its local work quietly", async ({
     .locator(`[data-message-id="${event.id}"]`)
     .getByRole("button", { name: /^View agent activity:/ });
   await expect(activity).toHaveAccessibleName(/Local tester/);
-  // A long step stays on one line and ends in an ellipsis.
+  // Long steps stay in details and do not widen the live typing bubble.
   await page.evaluate(
     (id) =>
       window.localAgentFixture.step(
@@ -241,6 +242,7 @@ test("Stop in a message's activity ends its local work quietly", async ({
       ),
     event.id,
   );
+  await expect(activity).not.toContainText("notes-for-the-stop-button.txt");
   const row = thread.locator(`[data-message-id="${event.id}"]`);
   const stop = row.getByRole("button", {
     name: "Stop Local tester",

@@ -27,9 +27,9 @@ import {
 } from "../agents/current-activity";
 import { localWorkLabel, type LocalWork } from "../agents/local-activity";
 import { AgentResponsePreview } from "./AgentResponsePreview";
-import { RemoteAgentHint, RemoteWorkIcon } from "./RemoteAgentHint";
+import { RemoteAgentHint } from "./RemoteAgentHint";
 import { remoteWorkDetail } from "../agents/execution-location";
-import { ActivityStepPreview, activityStepLabel } from "./ActivityStepPreview";
+import { ActivityStepPreview } from "./ActivityStepPreview";
 import { AgentActivityRow } from "../agents/AgentActivityRow";
 import { NavigationCard } from "../../shared/design-system/ui/NavigationItem";
 import { OctagonIcon } from "../../shared/design-system/icons";
@@ -450,15 +450,6 @@ export function TypingIndicator({
           ", ",
         )}${humans.length > 2 ? ` and ${humans.length - 2} others` : ""}${humans.length === 1 ? " is typing" : " are typing"}`
     : "";
-  const firstStep = firstAgent ? details.get(firstAgent)?.label : undefined;
-  const previewText =
-    (firstAgent && replaced.has(firstAgent)) ||
-    firstStep === "Working" ||
-    firstStep === "Received · waiting to start" ||
-    firstStep === "Starting"
-      ? undefined
-      : firstStep;
-  const visibleStep = activityStepLabel(previewText);
   return (
     <>
       {/* Establish the live region before the first working/typing transition. */}
@@ -505,23 +496,12 @@ export function TypingIndicator({
               <AgentChooser
                 key={`${channelId}:${threadRootId ?? ""}`}
                 label={
-                  visibleStep ||
-                  (agents.length === 1 && firstAgent
+                  agents.length === 1 && firstAgent
                     ? `Activity: ${name(firstAgent)} working`
-                    : `Activity: ${agents.length} agents working`)
+                    : `Activity: ${agents.length} agents working`
                 }
                 content={
                   <ActivityStepPreview
-                    icon={
-                      visibleStep && (
-                        <RemoteWorkIcon
-                          session={session}
-                          viewer={session.viewer}
-                          pubkey={firstAgent}
-                          active
-                        />
-                      )
-                    }
                     state={
                       details.get(firstAgent)?.label ===
                         "Received · waiting to start" ||
@@ -529,7 +509,6 @@ export function TypingIndicator({
                         ? "waiting"
                         : "working"
                     }
-                    text={previewText}
                   />
                 }
                 openTarget={

@@ -103,18 +103,19 @@
     opacity: 0;
     pointer-events: none;
   }
-  .overlayControls:not(:hover, :focus-within):not(:has([data-stopping]))
+  .root:not(:hover)
+    .overlayControls:not(:focus-within):not(:has([data-stopping]))
     .overlayContent {
     mask-image: none;
   }
-  .overlayControls:hover > .inlineStop,
   .overlayControls:focus-within > .inlineStop,
-  .overlayControls > .inlineStop[data-stopping] {
+  .overlayControls > .inlineStop[data-stopping],
+  .root:hover .overlayControls > .inlineStop {
     opacity: 1;
   }
-  .overlayControls:hover > .inlineStop > button,
   .overlayControls:focus-within > .inlineStop > button,
-  .overlayControls > .inlineStop[data-stopping] > button {
+  .overlayControls > .inlineStop[data-stopping] > button,
+  .root:hover .overlayControls > .inlineStop > button {
     pointer-events: auto;
   }
 }

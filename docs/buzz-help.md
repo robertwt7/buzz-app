@@ -861,8 +861,8 @@ available rather than silently discarding it.
   no location caption. The Harness menu keeps the Remote and Local group headings.
   Owners also see **Remote** beside their agents’ names in messages and typing or
   working previews when the local inventory confirms remote execution. Hover or
-  focus it for where the agent runs. A cloud precedes a remote agent’s current
-  step and pulses while working, staying still with reduced motion.
+  focus it for where the agent runs. A cloud marks remote work in activity
+  history and pulses while live, staying still with reduced motion.
   When a remote agent has no current step details, the activity popover shows
   where it runs; received tool details take precedence.
   Available model, effort and session controls keep their gauge beside Send.
@@ -1003,9 +1003,9 @@ available rather than silently discarding it.
   its speaker. Thread work appears inside its thread; the channel’s reply summary
   still shows when an agent is working there. While the activity under your
   message shows an agent working, it is that agent's only working indicator.
-  Otherwise dots remain at the end of the conversation while agents work,
-  alongside current step details when available. With Reduce Motion enabled,
-  the dots stay still. For one agent, click the live activity bubble to open
+  Otherwise dots remain at the end of the conversation while agents work;
+  open **Working now** or Activity for current step details. With Reduce Motion
+  enabled, the dots stay still. For one agent, click the live activity bubble to open
   its activity; hover or focus the bubble to reveal **Stop** (always visible on
   touch screens). For several agents, open or hover the bubble to choose an
   agent’s activity or stop an individual request. Expand recorded work for its

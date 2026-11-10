@@ -604,9 +604,9 @@ it("shows local receipt and failure without requiring an ACP transcript, and ope
     expect(bubble.querySelector('[data-state="working"]')).not.toBeNull();
     act(() => work.step("Read", "notes.txt"));
     expect(bubble).toHaveAccessibleName(
-      "View agent activity: Blossom, Reading notes.txt",
+      "View agent activity: Blossom, working",
     );
-    expect(bubble).toHaveTextContent("Reading notes.txt");
+    expect(bubble).not.toHaveTextContent("Reading notes.txt");
     expect(bubble.querySelector('[data-state="working"]')).not.toBeNull();
     act(() => work.finish({ ok: false, error: "Provider unavailable" }));
     expect(screen.getByText("Couldn’t finish")).toBeInTheDocument();
@@ -662,7 +662,7 @@ it("dismisses only that agent's error on this message, without changing other wo
       screen.getByRole("img", { name: "Blossom, Bubbles" }),
     ).toBeInTheDocument();
     expect(failedBadge?.parentElement).toBe(workingBadge?.parentElement);
-    expect(workingBadge).toHaveTextContent("Reading notes.txt");
+    expect(workingBadge).toHaveTextContent("");
     fireEvent.click(
       screen.getByRole("button", {
         name: /(?:View agent activity|Show activity history|Collapse activity history)/,
@@ -1813,7 +1813,7 @@ it.each([
   [false, true],
   [true, true],
 ])(
-  "shows one step label through handoff (stoppable=%s, thinking=%s)",
+  "keeps one stable activity cue through handoff (stoppable=%s, thinking=%s)",
   async (stoppable, thinking) => {
     const local = createLocalAgentActivity();
     const f = fixture(local);
@@ -1850,26 +1850,24 @@ it.each([
     try {
       expect(
         screen.getByRole("button", {
-          name: `View agent activity: Blossom, ${label}`,
+          name: "View agent activity: Blossom, working",
         }),
       ).toBeVisible();
       // The message bubble is the agent's one working indicator here.
       expect(
         screen.queryByRole("button", { name: /Activity: .*working/ }),
       ).toBeNull();
-      expect(screen.getAllByText(label)).toHaveLength(1);
+      expect(screen.queryByText(label)).toBeNull();
       view.rerender(ui([A]));
       expect(
         screen.getByRole("button", {
-          name: `View agent activity: Blossom, ${label}`,
+          name: "View agent activity: Blossom, working",
         }),
       ).toBeVisible();
       expect(
         screen.queryByRole("button", { name: /Activity: .*working/ }),
       ).toBeNull();
-      expect(
-        screen.queryByRole("button", { name: "Reading notes.txt" }),
-      ).toBeNull();
+      expect(screen.queryByText(label)).toBeNull();
       openBubble();
       if (stoppable) {
         fireEvent.click(screen.getByRole("button", { name: "Stop Blossom" }));
@@ -1995,7 +1993,7 @@ it("lets a thread root's live bubble replace that thread's indicator", () => {
   }
 });
 
-it("shows thinking once across the live bubble, recorded history and conversation indicator", () => {
+it("shows recorded thinking without repeating it in live indicators", () => {
   const local = createLocalAgentActivity();
   const f = fixture(local);
   const owner = createRelaySession(null);
@@ -2087,7 +2085,7 @@ it("shows thinking once across the live bubble, recorded history and conversatio
   );
   const view = render(ui(false));
   try {
-    expect(screen.getAllByText("Thinking")).toHaveLength(1);
+    expect(screen.queryByText("Thinking")).toBeNull();
     // Until history owns the work, the message bubble is its one indicator.
     expect(
       screen.queryByRole("button", { name: /Activity: .*working/ }),
@@ -2282,6 +2280,10 @@ it.each([
         rawInput: { path: "/project/file.ts" },
       });
       expect(hint()).toBeVisible();
+      const remote = screen.getByRole("button", {
+        name: "View agent activity: Bubbles, remote, working",
+      });
+      expect(remote).not.toHaveTextContent("Read file");
       f.send(B, "b1", 5, "turn_completed");
       // A local agent's tool call never shows it.
       f.send(A, "a1", 1, "turn_started", { triggeringEventIds: [root] });
